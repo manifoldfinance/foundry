@@ -5,6 +5,7 @@ use ethers::{
 };
 use eyre::Result;
 use foundry_evm::{
+    coverage::HitMaps,
     executor::{CallResult, DatabaseRef, DeployResult, EvmError, Executor},
     fuzz::{CounterExample, FuzzedCases, FuzzedExecutor},
     trace::{CallTraceArena, TraceKind},
@@ -49,7 +50,7 @@ impl SuiteResult {
 }
 
 /// The result of an executed solidity test
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct TestResult {
     /// Whether the test case was successful. This means that the transaction executed
     /// properly, or that there was a revert and that the test was expected to fail
@@ -73,6 +74,10 @@ pub struct TestResult {
 
     /// Traces
     pub traces: Vec<(TraceKind, CallTraceArena)>,
+
+    /// Raw coverage info
+    #[serde(skip)]
+    pub coverage: Option<HitMaps>,
 
     /// Labeled addresses
     pub labeled_addresses: BTreeMap<Address, String>,
@@ -138,6 +143,12 @@ impl TestKind {
                 mean: fuzzed.mean_gas(false),
             },
         }
+    }
+}
+
+impl Default for TestKind {
+    fn default() -> Self {
+        TestKind::Standard(0)
     }
 }
 
@@ -334,13 +345,8 @@ impl<'a, DB: DatabaseRef + Send + Sync> ContractRunner<'a, DB> {
                 [(
                     "setUp()".to_string(),
                     TestResult {
-                        success: false,
                         reason: Some("Multiple setUp functions".to_string()),
-                        counterexample: None,
-                        logs: vec![],
-                        kind: TestKind::Standard(0),
-                        traces: vec![],
-                        labeled_addresses: BTreeMap::new(),
+                        ..Default::default()
                     },
                 )]
                 .into(),
@@ -356,13 +362,11 @@ impl<'a, DB: DatabaseRef + Send + Sync> ContractRunner<'a, DB> {
                 [(
                     "setUp()".to_string(),
                     TestResult {
-                        success: false,
                         reason: setup.reason,
-                        counterexample: None,
                         logs: setup.logs,
-                        kind: TestKind::Standard(0),
                         traces: setup.traces,
                         labeled_addresses: setup.labeled_addresses,
+                        ..Default::default()
                     },
                 )]
                 .into(),
@@ -422,44 +426,50 @@ impl<'a, DB: DatabaseRef + Send + Sync> ContractRunner<'a, DB> {
 
         // Run unit test
         let start = Instant::now();
-        let (reverted, reason, gas, stipend, execution_traces, state_changeset) = match self
-            .executor
-            .call::<(), _, _>(self.sender, address, func.clone(), (), 0.into(), self.errors)
-        {
-            Ok(CallResult {
-                reverted,
-                gas,
-                stipend,
-                logs: execution_logs,
-                traces: execution_trace,
-                labels: new_labels,
-                state_changeset,
-                ..
-            }) => {
-                labeled_addresses.extend(new_labels);
-                logs.extend(execution_logs);
-                (reverted, None, gas, stipend, execution_trace, state_changeset)
-            }
-            Err(EvmError::Execution {
-                reverted,
-                reason,
-                gas,
-                stipend,
-                logs: execution_logs,
-                traces: execution_trace,
-                labels: new_labels,
-                state_changeset,
-                ..
-            }) => {
-                labeled_addresses.extend(new_labels);
-                logs.extend(execution_logs);
-                (reverted, Some(reason), gas, stipend, execution_trace, state_changeset)
-            }
-            Err(err) => {
-                tracing::error!(?err);
-                return Err(err.into())
-            }
-        };
+        let (reverted, reason, gas, stipend, execution_traces, coverage, state_changeset) =
+            match self.executor.call::<(), _, _>(
+                self.sender,
+                address,
+                func.clone(),
+                (),
+                0.into(),
+                self.errors,
+            ) {
+                Ok(CallResult {
+                    reverted,
+                    gas,
+                    stipend,
+                    logs: execution_logs,
+                    traces: execution_trace,
+                    coverage,
+                    labels: new_labels,
+                    state_changeset,
+                    ..
+                }) => {
+                    labeled_addresses.extend(new_labels);
+                    logs.extend(execution_logs);
+                    (reverted, None, gas, stipend, execution_trace, coverage, state_changeset)
+                }
+                Err(EvmError::Execution {
+                    reverted,
+                    reason,
+                    gas,
+                    stipend,
+                    logs: execution_logs,
+                    traces: execution_trace,
+                    labels: new_labels,
+                    state_changeset,
+                    ..
+                }) => {
+                    labeled_addresses.extend(new_labels);
+                    logs.extend(execution_logs);
+                    (reverted, Some(reason), gas, stipend, execution_trace, None, state_changeset)
+                }
+                Err(err) => {
+                    tracing::error!(?err);
+                    return Err(err.into())
+                }
+            };
         traces.extend(execution_traces.map(|traces| (TraceKind::Execution, traces)).into_iter());
 
         let success = self.executor.is_success(
@@ -483,6 +493,7 @@ impl<'a, DB: DatabaseRef + Send + Sync> ContractRunner<'a, DB> {
             logs,
             kind: TestKind::Standard(gas.overflowing_sub(stipend).0),
             traces,
+            coverage,
             labeled_addresses,
         })
     }
@@ -524,6 +535,8 @@ impl<'a, DB: DatabaseRef + Send + Sync> ContractRunner<'a, DB> {
             logs,
             kind: TestKind::Fuzz(result.cases),
             traces,
+            // TODO: Maybe support coverage for fuzz tests
+            coverage: None,
             labeled_addresses,
         })
     }

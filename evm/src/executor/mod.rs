@@ -27,7 +27,7 @@ pub use revm::db::DatabaseRef;
 pub use revm::Env;
 
 use self::inspector::{InspectorData, InspectorStackConfig};
-use crate::{debug::DebugArena, trace::CallTraceArena, CALLER};
+use crate::{coverage::HitMaps, debug::DebugArena, trace::CallTraceArena, CALLER};
 use bytes::Bytes;
 use ethers::{
     abi::{Abi, Detokenize, Tokenize},
@@ -101,6 +101,8 @@ pub struct CallResult<D: Detokenize> {
     pub labels: BTreeMap<Address, String>,
     /// The traces of the call
     pub traces: Option<CallTraceArena>,
+    /// The coverage info collected during the call
+    pub coverage: Option<HitMaps>,
     /// The debug nodes of the call
     pub debug: Option<DebugArena>,
     /// The changeset of the state.
@@ -129,6 +131,8 @@ pub struct RawCallResult {
     pub labels: BTreeMap<Address, String>,
     /// The traces of the call
     pub traces: Option<CallTraceArena>,
+    /// The coverage info collected during the call
+    pub coverage: Option<HitMaps>,
     /// The debug nodes of the call
     pub debug: Option<DebugArena>,
     /// The changeset of the state.
@@ -149,6 +153,7 @@ impl Default for RawCallResult {
             logs: Vec::new(),
             labels: BTreeMap::new(),
             traces: None,
+            coverage: None,
             debug: None,
             state_changeset: None,
         }
@@ -261,6 +266,7 @@ where
             logs,
             labels,
             traces,
+            coverage,
             debug,
             state_changeset,
         } = self.call_raw_committing(from, to, calldata, value)?;
@@ -275,6 +281,7 @@ where
                     logs,
                     labels,
                     traces,
+                    coverage,
                     debug,
                     state_changeset,
                 })
@@ -322,7 +329,7 @@ where
             _ => Bytes::default(),
         };
 
-        let InspectorData { logs, labels, traces, debug, cheatcodes } =
+        let InspectorData { logs, labels, traces, coverage, debug, cheatcodes } =
             inspector.collect_inspector_states();
 
         // Persist the changed block environment
@@ -339,6 +346,7 @@ where
             stipend,
             logs,
             labels,
+            coverage,
             traces,
             debug,
             state_changeset: None,
@@ -368,6 +376,7 @@ where
             logs,
             labels,
             traces,
+            coverage,
             debug,
             state_changeset,
         } = self.call_raw(from, to, calldata, value)?;
@@ -382,6 +391,7 @@ where
                     logs,
                     labels,
                     traces,
+                    coverage,
                     debug,
                     state_changeset,
                 })
@@ -429,7 +439,7 @@ where
             _ => Bytes::default(),
         };
 
-        let InspectorData { logs, labels, traces, debug, .. } =
+        let InspectorData { logs, labels, traces, debug, coverage, .. } =
             inspector.collect_inspector_states();
         Ok(RawCallResult {
             status,
@@ -440,6 +450,7 @@ where
             logs: logs.to_vec(),
             labels,
             traces,
+            coverage,
             debug,
             state_changeset: Some(state_changeset),
         })
