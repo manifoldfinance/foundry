@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.4
 
-FROM alpine:3.16 as build-environment
+FROM alpine:3.16 AS build-environment
 
 ARG TARGETARCH
 WORKDIR /opt
@@ -25,8 +25,9 @@ RUN --mount=type=cache,target=/root/.cargo/registry --mount=type=cache,target=/r
     && strip out/cast \
     && strip out/anvil;
 
-FROM docker.io/frolvlad/alpine-glibc:alpine-3.16_glibc-2.35 as foundry-client
+FROM docker.io/frolvlad/alpine-glibc:glibc-2.34 AS foundry-client
 
+RUN apk update
 RUN apk add --no-cache linux-headers gcompat git
 
 COPY --from=build-environment /opt/foundry/out/forge /usr/local/bin/forge
