@@ -27,8 +27,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry --mount=type=cache,target=/r
 
 FROM docker.io/frolvlad/alpine-glibc:glibc-2.34 AS foundry-client
 
-RUN apk update
-RUN apk add --no-cache linux-headers gcompat git
+RUN apk add --no-cache linux-headers git
 
 COPY --from=build-environment /opt/foundry/out/forge /usr/local/bin/forge
 COPY --from=build-environment /opt/foundry/out/cast /usr/local/bin/cast
