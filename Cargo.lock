@@ -3565,6 +3565,7 @@ dependencies = [
  "foundry-config",
  "foundry-evm",
  "serde",
+ "serde_json",
  "toml 0.8.12",
  "vergen",
 ]

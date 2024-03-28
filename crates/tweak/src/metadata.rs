@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use alloy_primitives::{Address, ChainId, TxHash};
 use eyre::Result;
+use foundry_compilers::artifacts::StorageLayout;
 
 /// CloneMetadata stores the metadata that are not included by `foundry.toml` but necessary for a cloned contract.
-/// The metadata can be serialized to the `clone.toml` file in the cloned project root.
 /// This struct is the twin of the `CloneMetadata` struct in the `clone` command of `forge` crate.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct CloneMetadata {
@@ -21,15 +21,17 @@ pub struct CloneMetadata {
     pub creation_transaction: TxHash,
     /// The address of the deployer (caller of the CREATE/CREATE2).
     pub deployer: Address,
+    /// The storage layout of the contract.
+    pub storage_layout: StorageLayout,
 }
 
 impl CloneMetadata {
     /// Load the metadata from the `clone.toml` file in the root directory of the project.
     /// If the file does not exist, an error is returned.
     pub fn load_with_root(root: &PathBuf) -> Result<CloneMetadata> {
-        let path = root.join("clone.toml");
+        let path = root.join(".clone.meta");
         let metadata = std::fs::read_to_string(&path)?;
-        let metadata = toml::from_str(&metadata)?;
+        let metadata = serde_json::from_str(&metadata)?;
         Ok(metadata)
     }
 }

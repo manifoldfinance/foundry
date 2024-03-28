@@ -70,7 +70,7 @@ alloy-primitives = { workspace = true, features = ["serde"] }
 # regex = { version = "1", default-features = false }
 # reqwest = { version = "0.11", default-features = false, features = ["json"] }
 # semver = "1"
-# serde_json.workspace = true
+serde_json.workspace = true
 # similar = { version = "2", features = ["inline"] }
 # solang-parser.workspace = true
 # strum = { workspace = true, features = ["derive"] }
