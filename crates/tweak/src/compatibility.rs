@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use foundry_compilers::artifacts::StorageLayout;
+use foundry_compilers::{artifacts::StorageLayout, ConfigurableContractArtifact};
 
 use crate::metadata::CloneMetadata;
 
@@ -14,12 +14,11 @@ use crate::metadata::CloneMetadata;
 /// 1. the project has the `clone.toml` metadata file in the root directory, which defines its original contract on chain.
 /// 2. the project's storage layout is the same as the original contract.
 /// If the project is not compatible, an error is returned.
-pub fn check_compatibility(root: &PathBuf) -> eyre::Result<()> {
-    // the clone metadata
-    let clone_metadata = CloneMetadata::load_with_root(root).map_err(|e| {
-        eyre::eyre!("the clone metadata file (clone.toml) does not exist or is invalid: {}", e)
-    })?;
-
+pub fn check_compatibility(
+    root: &PathBuf,
+    clone_metadata: &CloneMetadata,
+    artifact: &ConfigurableContractArtifact,
+) -> eyre::Result<()> {
     // to check the storage layout compatibility, we need to download the original contract's code from etherscan and compile.
     let original_layout = get_original_storage_layout(&clone_metadata)?;
     let current_layout = get_current_storage_layout(root)?;
