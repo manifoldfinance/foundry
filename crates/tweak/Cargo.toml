@@ -20,7 +20,7 @@ vergen = { workspace = true, default-features = false, features = [
 # lib
 foundry-block-explorers = { workspace = true, features = ["foundry-compilers"] }
 foundry-common.workspace = true
-# foundry-compilers = { workspace = true, features = ["full"] }
+foundry-compilers = { workspace = true, features = ["full"] }
 foundry-config.workspace = true
 foundry-evm.workspace = true
 # foundry-wallets.workspace = true
@@ -35,10 +35,10 @@ foundry-evm.workspace = true
 # revm-inspectors.workspace = true
 
 # comfy-table = "7"
-# eyre.workspace = true
+eyre.workspace = true
 # proptest = "1"
 # rayon = "1"
-# serde.workspace = true
+serde.workspace = true
 # tracing.workspace = true
 # yansi = "0.5"
 
@@ -52,7 +52,7 @@ foundry-evm.workspace = true
 
 # alloy-dyn-abi.workspace = true
 # alloy-json-abi.workspace = true
-# alloy-primitives = { workspace = true, features = ["serde"] }
+alloy-primitives = { workspace = true, features = ["serde"] }
 # alloy-rpc-types.workspace = true
 
 # async-trait = "0.1"
@@ -76,7 +76,7 @@ foundry-evm.workspace = true
 # strum = { workspace = true, features = ["derive"] }
 # thiserror = "1"
 # tokio = { version = "1", features = ["time"] }
-# toml = { version = "0.8", features = ["preserve_order"] }
+toml = { version = "0.8", features = ["preserve_order"] }
 # toml_edit = "0.21"
 # watchexec = "2.3.2"
 # evm-disassembler.workspace = true

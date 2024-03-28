@@ -3557,10 +3557,15 @@ dependencies = [
 name = "foundry-tweak"
 version = "0.2.0"
 dependencies = [
+ "alloy-primitives",
+ "eyre",
  "foundry-block-explorers",
  "foundry-common",
+ "foundry-compilers",
  "foundry-config",
  "foundry-evm",
+ "serde",
+ "toml 0.8.12",
  "vergen",
 ]
 
