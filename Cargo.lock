@@ -3552,6 +3552,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "foundry-tweak"
+version = "0.2.0"
+dependencies = [
+ "foundry-block-explorers",
+ "foundry-common",
+ "foundry-config",
+ "foundry-evm",
+ "vergen",
+]
+
+[[package]]
 name = "foundry-wallets"
 version = "0.2.0"
 dependencies = [
@@ -7890,17 +7901,6 @@ dependencies = [
  "serde_spanned",
  "toml_datetime",
  "winnow 0.6.5",
-]
-
-[[package]]
-name = "tongs"
-version = "0.2.0"
-dependencies = [
- "foundry-block-explorers",
- "foundry-common",
- "foundry-config",
- "foundry-evm",
- "vergen",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 [package]
-name = "tongs"
+name = "foundry-tweak"
 
 version.workspace = true
 edition.workspace = true
