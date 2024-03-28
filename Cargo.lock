@@ -7900,6 +7900,7 @@ dependencies = [
  "foundry-common",
  "foundry-config",
  "foundry-evm",
+ "vergen",
 ]
 
 [[package]]
