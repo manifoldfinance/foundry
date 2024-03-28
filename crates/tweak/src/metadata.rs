@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use alloy_primitives::{Address, ChainId, TxHash};
+use alloy_primitives::{Address, Bytes, ChainId, TxHash};
 use eyre::Result;
 use foundry_compilers::artifacts::StorageLayout;
 
@@ -21,6 +21,8 @@ pub struct CloneMetadata {
     pub creation_transaction: TxHash,
     /// The address of the deployer (caller of the CREATE/CREATE2).
     pub deployer: Address,
+    /// The constructor arguments of the contract.
+    pub constructor_arguments: Bytes,
     /// The storage layout of the contract.
     pub storage_layout: StorageLayout,
 }
