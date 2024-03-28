@@ -77,6 +77,8 @@ solang-parser.workspace = true
 strum = { workspace = true, features = ["derive"] }
 thiserror = "1"
 tokio = { version = "1", features = ["time"] }
+toml = { version = "0.8", features = ["preserve_order"] }
+toml_edit = "0.21"
 watchexec = "2.3.2"
 evm-disassembler.workspace = true
 rustc-hash.workspace = true
@@ -96,6 +98,7 @@ globset = "0.4"
 paste = "1.0"
 path-slash = "0.2"
 pretty_assertions.workspace = true
+serial_test = "3"
 svm = { package = "svm-rs", version = "0.4", default-features = false, features = ["rustls"] }
 tempfile = "3"
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
