@@ -7893,6 +7893,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tongs"
+version = "0.2.0"
+dependencies = [
+ "foundry-block-explorers",
+ "foundry-common",
+ "foundry-config",
+ "foundry-evm",
+]
+
+[[package]]
 name = "topological-sort"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
