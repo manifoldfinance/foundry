@@ -28,8 +28,8 @@ pub struct CloneMetadata {
 impl CloneMetadata {
     /// Load the metadata from the `clone.toml` file in the root directory of the project.
     /// If the file does not exist, an error is returned.
-    pub fn load_with_root(root: &PathBuf) -> Result<CloneMetadata> {
-        let path = root.join(".clone.meta");
+    pub fn load_with_root(root: impl Into<PathBuf>) -> Result<CloneMetadata> {
+        let path = root.into().join(".clone.meta");
         let metadata = std::fs::read_to_string(&path)?;
         let metadata = serde_json::from_str(&metadata)?;
         Ok(metadata)

@@ -5,7 +5,7 @@ mod metadata;
 use eyre::{eyre, Result};
 use foundry_common::compile::ProjectCompiler;
 use foundry_compilers::{
-    artifacts::output_selection::ContractOutputSelection, Artifact, ProjectCompileOutput,
+    artifacts::output_selection::ContractOutputSelection, ProjectCompileOutput,
 };
 use foundry_config::Config;
 use metadata::CloneMetadata;
@@ -17,7 +17,8 @@ pub fn tweak(root: &PathBuf) -> Result<()> {
         eyre!("the clone metadata file (clone.toml) does not exist or is invalid: {}", e)
     })?;
 
-    let (_, _, artifact) = compile_project_safe(root)?
+    let output = compile_project_safe(root)?;
+    let (_, _, artifact) = output
         .artifacts_with_files()
         .find(|(_, contract_name, _)| **contract_name == metadata.target_contract)
         .ok_or_else(|| {
