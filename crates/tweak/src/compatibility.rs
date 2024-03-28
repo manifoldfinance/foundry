@@ -1,6 +1,5 @@
 //! Compatibility check of tweaking an on-chain contract with a local cloned project.
 //! The local project usually should be created by `forge clone` command.
-//! The `clone.toml` metadata file should be present in the root directory of the project.
 //! Users may modify the source code of the cloned project, but the storage layout should remain the same as the original contract.
 
 use std::{collections::BTreeMap, path::PathBuf};
@@ -11,8 +10,7 @@ use crate::metadata::CloneMetadata;
 
 /// Check the tweak compatibility of the project with the given root.
 /// The project is compatible if:
-/// 1. the project has the `.clone.meta` metadata file in the root directory, which defines its original contract on chain.
-/// 2. the project's storage layout is the same as the original contract.
+/// - the project's storage layout is the same as the original contract.
 /// If the project is not compatible, an error is returned.
 pub fn check_compatibility(
     _root: &PathBuf,
