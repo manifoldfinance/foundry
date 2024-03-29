@@ -206,7 +206,9 @@ async fn prepare_backend(
         tx_receipt.block_number.ok_or(eyre!("the transaction is not mined"))?.to::<u64>();
 
     // get the figment from the cloned project's config
-    let figment: Figment = project.config.clone().into();
+    let mut config = project.config.clone();
+    config.fork_block_number = Some(block_number - 1);
+    let figment: Figment = config.into();
     let figment = figment.merge(rpc);
 
     // set evm options
@@ -215,8 +217,7 @@ async fn prepare_backend(
     evm_opts.fork_block_number = Some(block_number - 1);
 
     // get an updated config
-    let mut config = Config::try_from(figment)?.sanitized();
-    config.fork_block_number = Some(block_number - 1);
+    let config = Config::try_from(figment)?.sanitized();
 
     // get env
     let env = evm_opts.evm_env().await?;
@@ -225,7 +226,7 @@ async fn prepare_backend(
     let db = Backend::spawn(evm_opts.get_fork(&config, env.clone()));
 
     // create the executor and the corresponding env
-    let mut executor = ExecutorBuilder::new().spec(project.config.evm_spec_id()).build(env, db);
+    let mut executor = ExecutorBuilder::new().spec(config.evm_spec_id()).build(env, db);
     let mut env = executor.env.clone();
 
     // then, we are going to replay all transactions before the creation transaction
