@@ -6,20 +6,20 @@ use alloy_primitives::{Address, Bytes};
 use alloy_providers::tmp::TempProvider;
 use alloy_rpc_types::{BlockId, BlockTransactions};
 use eyre::{eyre, Context, Result};
+use foundry_cli::opts::RpcOpts;
 use foundry_common::{
     is_known_system_sender, provider::alloy::ProviderBuilder, SYSTEM_TRANSACTION_TYPE,
 };
 use foundry_compilers::{Artifact, ConfigurableContractArtifact};
-use foundry_config::NamedChain;
+use foundry_config::{figment::Figment, Config, NamedChain};
 use foundry_evm::{
     backend::Backend,
     executors::{EvmError, ExecutorBuilder},
-    fork::CreateFork,
     opts::EvmOpts,
     utils::configure_tx_env,
 };
 use revm::{
-    interpreter::{CreateInputs, CreateOutcome, Interpreter},
+    interpreter::{CreateInputs, CreateOutcome},
     primitives::EnvWithHandlerCfg,
     EvmContext, Inspector,
 };
@@ -116,12 +116,12 @@ impl Inspector<&mut Backend> for TweakInspctor {
 }
 
 pub async fn generate_tweaked_code(
-    rpc_url: &str,
+    rpc: &RpcOpts,
     project: &ClonedProject,
     artifact: &ConfigurableContractArtifact,
 ) -> Result<Bytes> {
     // prepare the execution backend
-    let (mut db, mut env) = prepare_backend(rpc_url, &project).await?;
+    let (mut db, mut env) = prepare_backend(&rpc, &project).await?;
 
     // prepare the deployment bytecode (w/ parameters)
     let tweaked_creation_code = prepare_tweaked_creation_code(&project, artifact)?;
@@ -129,10 +129,36 @@ pub async fn generate_tweaked_code(
     // let hook into the creation process
     let mut inspector =
         TweakInspctor::new(Some(project.metadata.address), Some(tweaked_creation_code));
-    inspector.prepare_for_pinpoint()?;
-    db.inspect(&mut env, &mut inspector)?;
 
-    Ok(Bytes::new())
+    // disable gas_limit for the inspector
+    env.cfg.disable_block_gas_limit = true;
+    env.tx.gas_limit = 0;
+
+    // round 1: pinpoint the target creation count
+    inspector.prepare_for_pinpoint()?;
+    let rv = db.inspect(&mut env, &mut inspector)?;
+    if !rv.result.is_success() {
+        return Err(eyre!("failed to pinpoint the target creation count:\n {:#?}", rv.result));
+    }
+
+    // round 2: tweak the creation code
+    inspector.prepare_for_tweak()?;
+    let rv = db.inspect(&mut env, &mut inspector)?;
+    if !rv.result.is_success() {
+        return Err(eyre!("failed to tweak the creation code:\n {:#?}", rv.result));
+    }
+
+    let tweaked_account = rv
+        .state
+        .get(&project.metadata.address)
+        .ok_or(eyre!("contract not found after tweaking"))?;
+    let tweaked_account_info = &tweaked_account.info;
+    let tweaked_code = &tweaked_account_info
+        .code
+        .clone()
+        .ok_or(eyre!("contract code not found after tweaking"))?;
+
+    Ok(tweaked_code.bytes().clone())
 }
 
 fn prepare_tweaked_creation_code(
@@ -152,9 +178,12 @@ fn prepare_tweaked_creation_code(
 }
 
 async fn prepare_backend(
-    rpc_url: &str,
+    rpc: &RpcOpts,
     project: &ClonedProject,
 ) -> Result<(Backend, EnvWithHandlerCfg)> {
+    // get rpc_url
+    let rpc_url = &rpc.url(Some(&project.config))?.ok_or(eyre!("rpc url is not found"))?;
+
     // prepare the RPC provider
     let provider = ProviderBuilder::new(rpc_url)
         .chain(NamedChain::try_from(project.metadata.chain_id)?)
@@ -168,22 +197,24 @@ async fn prepare_backend(
     let block_number =
         tx_receipt.block_number.ok_or(eyre!("the transaction is not mined"))?.to::<u64>();
 
+    // get the figment from the cloned project's config
+    let figment: Figment = project.config.clone().into();
+    let figment = figment.merge(rpc);
+
     // set evm options
-    let evm_opts = EvmOpts {
-        fork_url: Some(rpc_url.into()),
-        fork_block_number: Some(block_number - 1),
-        verbosity: 0, // let's keep it silent
-        ..Default::default()
-    };
+    let mut evm_opts = figment.extract::<EvmOpts>()?;
+    evm_opts.fork_url = Some(rpc_url.to_string());
+    evm_opts.fork_block_number = Some(block_number - 1);
+
+    // get an updated config
+    let mut config = Config::try_from(figment)?.sanitized();
+    config.fork_block_number = Some(block_number - 1);
+
+    // get env
     let env = evm_opts.evm_env().await?;
 
     // get backend and create a fork
-    let db = Backend::spawn(Some(CreateFork {
-        url: rpc_url.to_string(),
-        enable_caching: true,
-        env: env.clone(),
-        evm_opts,
-    }));
+    let db = Backend::spawn(evm_opts.get_fork(&config, env.clone()));
 
     // create the executor and the corresponding env
     let mut executor = ExecutorBuilder::new().spec(project.config.evm_spec_id()).build(env, db);
@@ -254,6 +285,7 @@ mod tests {
     };
 
     use alloy_primitives::{address, TxHash};
+    use foundry_cli::opts::RpcOpts;
     use tempfile;
 
     fn get_fake_project() -> ClonedProject {
@@ -281,14 +313,21 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_with_fake_project() {
         let fake_project = get_fake_project();
-        let (mut db, mut env) =
-            prepare_backend("https://cloudflare-eth.com/", &fake_project).await.unwrap();
+        let rpc = RpcOpts { url: Some("http://localhost:8545".to_string()), ..Default::default() };
+        let (mut db, mut env) = prepare_backend(&rpc, &fake_project).await.unwrap();
 
         // check whether the backend is created successfully by replaying the transaction
         let mut inspector = TweakInspctor::new(Some(fake_project.metadata.address), None);
         inspector.prepare_for_pinpoint().unwrap();
-        env.tx.gas_limit += 10_000_000; // XXX: GAS
+
+        env.tx.gas_limit *= 2;
         let rv = db.inspect(&mut env, &mut inspector).unwrap();
-        println!("{:#?}", rv);
+
+        assert!(
+            inspector.target_creation_count == Some(1),
+            "Failed to find the target creation count"
+        );
+        assert!(rv.result.is_success(), "Failed to replay the transaction");
+        assert!(rv.state[&fake_project.metadata.address].info.code.is_some());
     }
 }

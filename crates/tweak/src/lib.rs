@@ -5,9 +5,10 @@ mod metadata;
 
 use eyre::{eyre, Result};
 
+use foundry_cli::opts::RpcOpts;
 pub use metadata::ClonedProject;
 
-pub async fn tweak(rpc_url: &str, cloned_project: &ClonedProject) -> Result<()> {
+pub async fn tweak(rpc: &RpcOpts, cloned_project: &ClonedProject) -> Result<()> {
     // collect the clone metadata
     let metadata = cloned_project.metadata.clone();
 
@@ -20,6 +21,6 @@ pub async fn tweak(rpc_url: &str, cloned_project: &ClonedProject) -> Result<()> 
         })?;
 
     compatibility::check_storage_compatibility(cloned_project)?;
-    code::generate_tweaked_code(rpc_url, &cloned_project, &artifact).await?;
+    code::generate_tweaked_code(rpc, &cloned_project, &artifact).await?;
     Ok(())
 }

@@ -3568,6 +3568,7 @@ dependencies = [
  "alloy-rpc-types",
  "eyre",
  "foundry-block-explorers",
+ "foundry-cli",
  "foundry-common",
  "foundry-compilers",
  "foundry-config",
