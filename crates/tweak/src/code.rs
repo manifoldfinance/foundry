@@ -290,6 +290,8 @@ mod tests {
 
     use alloy_primitives::Bytes;
     use foundry_cli::opts::RpcOpts;
+    use foundry_compilers::EvmVersion;
+    use foundry_config::Config;
     use tempfile;
 
     fn get_fake_project(address: &str, tx: &str) -> ClonedProject {
@@ -297,7 +299,10 @@ mod tests {
 
         ClonedProject {
             root: fake_root,
-            config: Default::default(),
+            config: Config {
+                evm_version: EvmVersion::Paris,
+                ..Default::default()
+            },
             metadata: CloneMetadata {
                 path: "src/FakeContract.sol".into(),
                 target_contract: "FakeContract".into(),
