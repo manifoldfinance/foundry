@@ -3564,6 +3564,7 @@ dependencies = [
  "foundry-compilers",
  "foundry-config",
  "foundry-evm",
+ "revm",
  "serde",
  "serde_json",
  "toml 0.8.12",

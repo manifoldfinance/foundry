@@ -19,7 +19,7 @@ pub fn tweak(cloned_project: &ClonedProject) -> Result<()> {
             eyre!("the contract {} is not found in the project", metadata.target_contract)
         })?;
 
-    compatibility::check_compatibility(cloned_project)?;
+    compatibility::check_storage_compatibility(cloned_project)?;
     code::generate_tweaked_code(&cloned_project.root, &metadata, &artifact)?;
 
     Ok(())

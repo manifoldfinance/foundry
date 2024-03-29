@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use foundry_compilers::{artifacts::StorageLayout, ConfigurableContractArtifact};
+use foundry_compilers::artifacts::StorageLayout;
 
 use crate::metadata::ClonedProject;
 
@@ -12,7 +12,7 @@ use crate::metadata::ClonedProject;
 /// The project is compatible if:
 /// - the project's storage layout is the same as the original contract.
 /// If the project is not compatible, an error is returned.
-pub fn check_compatibility(cloned_project: &ClonedProject) -> eyre::Result<()> {
+pub fn check_storage_compatibility(cloned_project: &ClonedProject) -> eyre::Result<()> {
     // to check the storage layout compatibility, we need to download the original contract's code from etherscan and compile.
     let original_layout = cloned_project.metadata.storage_layout.to_owned();
     let current_layout = cloned_project

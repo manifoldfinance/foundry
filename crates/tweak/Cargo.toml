@@ -32,6 +32,15 @@ foundry-evm.workspace = true
 # ethers-providers.workspace = true
 # ethers-signers.workspace = true
 
+revm = { workspace = true, default-features = false, features = [
+    "std",
+    "serde",
+    "memory_limit",
+    "optional_eip3607",
+    "optional_block_gas_limit",
+    "optional_no_base_fee",
+    "arbitrary",
+] }
 # revm-inspectors.workspace = true
 
 # comfy-table = "7"
