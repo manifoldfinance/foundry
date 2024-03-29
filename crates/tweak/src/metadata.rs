@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use alloy_primitives::{Address, Bytes, ChainId, TxHash};
 use eyre::{eyre, Result};
+use foundry_cli::opts::RpcOpts;
 use foundry_common::compile::ProjectCompiler;
 use foundry_compilers::{
     artifacts::{output_selection::ContractOutputSelection, StorageLayout},
@@ -82,6 +83,24 @@ impl ClonedProject {
                 eyre!("the contract {} is not found in the project", self.metadata.target_contract)
             })?;
         Ok(artifact.to_owned())
+    }
+
+    /// Get the tweaked code of the main contract of the project.
+    pub async fn tweaked_code(&self, rpc: &RpcOpts) -> Result<Bytes> {
+        // check chain id
+        if self.config.chain.unwrap_or_default().id() != self.metadata.chain_id {
+            return Err(eyre!(
+                "the chain id of the project ({}) is different from the chain id of the on-chain contract ({})",
+                self.config.chain.unwrap_or_default().id(),
+                self.metadata.chain_id
+            ));
+        }
+        // check the storage compatibility
+        super::compatibility::check_storage_compatibility(self)?;
+
+        // get tweaked code
+        let code = super::code::generate_tweaked_code(rpc, self, &self.main_artifact()?).await?;
+        Ok(code)
     }
 }
 
