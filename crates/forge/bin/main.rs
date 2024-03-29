@@ -58,6 +58,7 @@ fn main() -> Result<()> {
         ForgeSubcommand::Install(cmd) => cmd.run(),
         ForgeSubcommand::Remove(cmd) => cmd.run(),
         ForgeSubcommand::Remappings(cmd) => cmd.run(),
+        ForgeSubcommand::Replay(cmd) => utils::block_on(cmd.run()),
         ForgeSubcommand::Init(cmd) => cmd.run(),
         ForgeSubcommand::Completions { shell } => {
             generate(shell, &mut Forge::command(), "forge", &mut std::io::stdout());
