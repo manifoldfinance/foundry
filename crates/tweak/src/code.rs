@@ -288,11 +288,11 @@ mod tests {
 
     use crate::{code::tweak, metadata::CloneMetadata, ClonedProject};
 
-    use alloy_primitives::{address, Bytes, TxHash};
+    use alloy_primitives::Bytes;
     use foundry_cli::opts::RpcOpts;
     use tempfile;
 
-    fn get_fake_project_1() -> ClonedProject {
+    fn get_fake_project(address: &str, tx: &str) -> ClonedProject {
         let fake_root = tempfile::tempdir().unwrap().path().to_path_buf();
 
         ClonedProject {
@@ -302,34 +302,9 @@ mod tests {
                 path: "src/FakeContract.sol".into(),
                 target_contract: "FakeContract".into(),
                 chain_id: 1,
-                address: address!("8B3D32cf2bb4d0D16656f4c0b04Fa546274f1545"),
-                creation_transaction: TxHash::from_str(
-                    "0x79820495643caf5a1e7e96578361c9ddba0e0735cd684ada7450254f6fd58f51",
-                )
-                .unwrap(),
-                deployer: address!("958892b4a0512b28aaac890fc938868bbd42f064"),
-                constructor_arguments: Default::default(),
-                storage_layout: Default::default(),
-            },
-        }
-    }
-
-    fn get_fake_project_2() -> ClonedProject {
-        let fake_root = tempfile::tempdir().unwrap().path().to_path_buf();
-
-        ClonedProject {
-            root: fake_root,
-            config: Default::default(),
-            metadata: CloneMetadata {
-                path: "src/FakeContract.sol".into(),
-                target_contract: "FakeContract".into(),
-                chain_id: 1,
-                address: address!("6B880d3B1FA2475C30Dc583726c56B4aFc66bD0b"),
-                creation_transaction: TxHash::from_str(
-                    "0x3812e48763d3631516206fb878007ed126223d5c31e8cc433c79659b8afbbf24",
-                )
-                .unwrap(),
-                deployer: address!("8525E2470D3f14057D92dC49A09BcC317175E875"),
+                address: address.parse().unwrap(),
+                creation_transaction: tx.parse().unwrap(),
+                deployer: Default::default(),
                 constructor_arguments: Default::default(),
                 storage_layout: Default::default(),
             },
@@ -338,7 +313,10 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_direct_deployment() {
-        let fake_project = get_fake_project_1();
+        let fake_project = get_fake_project(
+            "0x8B3D32cf2bb4d0D16656f4c0b04Fa546274f1545",
+            "0x79820495643caf5a1e7e96578361c9ddba0e0735cd684ada7450254f6fd58f51",
+        );
         let rpc = RpcOpts { url: Some("http://localhost:8545".to_string()), ..Default::default() };
 
         let tweaked_code = format!(
@@ -354,7 +332,10 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_factory_deployment() {
-        let fake_project = get_fake_project_2();
+        let fake_project = get_fake_project(
+            "0x6B880d3B1FA2475C30Dc583726c56B4aFc66bD0b",
+            "0x3812e48763d3631516206fb878007ed126223d5c31e8cc433c79659b8afbbf24",
+        );
         let rpc = RpcOpts { url: Some("http://localhost:8545".to_string()), ..Default::default() };
 
         let tweaked_code = format!(
