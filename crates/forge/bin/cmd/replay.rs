@@ -6,13 +6,14 @@ use alloy_rpc_types::{Block, BlockTransactions, Transaction};
 use eyre::{eyre, Context, Result};
 use forge::{
     executors::{DeployResult, EvmError, RawCallResult},
-    revm::primitives::EnvWithHandlerCfg,
+    revm::primitives::{EnvWithHandlerCfg, SpecId},
     utils::configure_tx_env,
 };
 use foundry_cli::{
     opts::RpcOpts,
     utils::{handle_traces, TraceResult},
 };
+use foundry_common::{is_known_system_sender, SYSTEM_TRANSACTION_TYPE};
 use foundry_evm::opts::EvmOpts;
 
 use clap::Parser;
@@ -85,7 +86,6 @@ async fn replay_tx_hash(
     let block = provider.get_block(tx_block_number.into(), true).await.unwrap();
     let block = block.ok_or(eyre::eyre!("block not found"))?;
 
-    // construct the EVM executor
     config.fork_block_number = Some(tx_block_number - 1); // fork from the previous block
     let mut executor = TweakExecutor::new(&config, evm_opts, tweaks).await?;
 
@@ -97,13 +97,22 @@ async fn replay_tx_hash(
         return Err(eyre::eyre!("block transactions not found"));
     };
     for (_, tx) in txs.into_iter().enumerate() {
+        // System transactions such as on L2s don't contain any pricing info so
+        // we skip them otherwise this would cause
+        // reverts
+        if is_known_system_sender(tx.from)
+            || tx.transaction_type.map(|ty| ty.to::<u64>()) == Some(SYSTEM_TRANSACTION_TYPE)
+        {
+            continue;
+        }
+
         if tx.hash == tx_hash {
             // we reach the target transaction
             break;
         }
 
         // execute the transaction
-        let _ = execute_tx(&mut executor, env.clone(), &tx)?;
+        let r = execute_tx(&mut executor, env.clone(), &tx)?;
     }
 
     // execute the target transaction
@@ -175,14 +184,18 @@ mod tests {
             "0xbfa440cd7df20320fe8400e4f61113379a018e3904eef7cf6085cf6cf22bcdb9".parse().unwrap();
 
         let mut config = Config::default();
+        println!("{:?}", config);
         let figment: Figment = config.clone().into();
         let evm_opts = figment.extract::<EvmOpts>().unwrap();
         config.eth_rpc_url = Some(RPC.to_string());
-        let r = super::replay_tx_hash(&config, &evm_opts, tx, &BTreeMap::default())
-            .await
-            .unwrap()
-            .trace_result()
-            .unwrap();
+        let r = super::replay_tx_hash(&config, &evm_opts, tx, &BTreeMap::default()).await.unwrap();
+        let super::ExecuteResult::Call(result) = &r else {
+            panic!("expected ExecuteResult::Call");
+        };
+        // println!("{:?}", result);
+        assert_eq!(result.reverted, false);
+        println!("gas: {}", result.gas_used);
+        let r = r.trace_result().unwrap();
         handle_traces(r, &config, config.chain, vec![], false).await.unwrap();
     }
 
