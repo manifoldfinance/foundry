@@ -299,10 +299,7 @@ mod tests {
 
         ClonedProject {
             root: fake_root,
-            config: Config {
-                evm_version: EvmVersion::Paris,
-                ..Default::default()
-            },
+            config: Config { evm_version: EvmVersion::Paris, ..Default::default() },
             metadata: CloneMetadata {
                 path: "src/FakeContract.sol".into(),
                 target_contract: "FakeContract".into(),
