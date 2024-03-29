@@ -32,7 +32,7 @@ struct TweakInspctor {
     contract_address: Option<Address>,
     target_creation_count: Option<u64>,
     tweaked_creation_code: Option<Bytes>,
-    tweaked_contract_address: Option<Address>,
+    tweaked_code: Option<Bytes>,
 }
 
 impl TweakInspctor {
@@ -42,7 +42,7 @@ impl TweakInspctor {
             contract_address,
             target_creation_count: None,
             tweaked_creation_code,
-            tweaked_contract_address: None,
+            tweaked_code: None,
         }
     }
 
@@ -95,7 +95,7 @@ impl Inspector<&mut Backend> for TweakInspctor {
     #[inline]
     fn create_end(
         &mut self,
-        _: &mut EvmContext<&mut Backend>,
+        context: &mut EvmContext<&mut Backend>,
         _: &CreateInputs,
         outcome: CreateOutcome,
     ) -> CreateOutcome {
@@ -103,7 +103,11 @@ impl Inspector<&mut Backend> for TweakInspctor {
         if let Some(target_count) = self.target_creation_count {
             // record the tweaked contract address
             if self.creation_count == target_count {
-                self.tweaked_contract_address = outcome.address;
+                if let Some(address) = outcome.address {
+                    if let Ok((code, _)) = context.code(address) {
+                        self.tweaked_code = Some(code.bytes().clone());
+                    }
+                }
             }
         } else {
             // we are here to find the target creation count
@@ -142,13 +146,9 @@ async fn tweak(
     let mut inspector =
         TweakInspctor::new(Some(project.metadata.address), Some(tweaked_creation_code));
 
-    // disable gas_limit for the inspector
-    env.cfg.disable_block_gas_limit = true;
-    env.tx.gas_limit *= 2;
-
     // round 1: pinpoint the target creation count
     inspector.prepare_for_pinpoint()?;
-    let rv = db.inspect(&mut env, &mut inspector)?;
+    let rv = db.inspect(&mut env.clone(), &mut inspector)?;
     if !rv.result.is_success() {
         return Err(eyre!("failed to pinpoint the target creation count:\n {:#?}", rv.result));
     }
@@ -160,27 +160,13 @@ async fn tweak(
 
     // round 2: tweak the creation code
     inspector.prepare_for_tweak()?;
-    let rv = db.inspect(&mut env, &mut inspector)?;
-    if !rv.result.is_success() {
-        return Err(eyre!("failed to tweak the creation code:\n {:#?}", rv.result));
-    }
-    assert!(
-        inspector.creation_count == 0,
-        "unexpected creation count: {}",
-        inspector.creation_count
-    );
+    // disable gas_limit for the inspector
+    env.cfg.disable_block_gas_limit = true;
+    env.tx.gas_limit *= 2;
+    // we do not care about the execution result in this round
+    db.inspect(&mut env, &mut inspector)?;
 
-    let tweaked_account = rv
-        .state
-        .get(&project.metadata.address)
-        .ok_or(eyre!("contract not found after tweaking"))?;
-    let tweaked_account_info = &tweaked_account.info;
-    let tweaked_code = &tweaked_account_info
-        .code
-        .clone()
-        .ok_or(eyre!("contract code not found after tweaking"))?;
-
-    Ok(tweaked_code.bytes().clone())
+    inspector.tweaked_code.ok_or(eyre!("the tweaked code is not generated"))
 }
 
 fn prepare_tweaked_creation_code(
@@ -268,7 +254,7 @@ async fn prepare_backend(
         }
 
         if tx.to.is_some() {
-            let rv = executor.commit_tx_with_env(env.clone()).wrap_err_with(|| {
+            executor.commit_tx_with_env(env.clone()).wrap_err_with(|| {
                 format!(
                     "Failed to execute transaction: {:?} in block {}",
                     tx.hash, env.block.number
@@ -305,7 +291,7 @@ mod tests {
     use foundry_cli::opts::RpcOpts;
     use tempfile;
 
-    fn get_fake_project() -> ClonedProject {
+    fn get_fake_project_1() -> ClonedProject {
         let fake_root = tempfile::tempdir().unwrap().path().to_path_buf();
 
         ClonedProject {
@@ -327,9 +313,47 @@ mod tests {
         }
     }
 
+    fn get_fake_project_2() -> ClonedProject {
+        let fake_root = tempfile::tempdir().unwrap().path().to_path_buf();
+
+        ClonedProject {
+            root: fake_root,
+            config: Default::default(),
+            metadata: CloneMetadata {
+                path: "src/FakeContract.sol".into(),
+                target_contract: "FakeContract".into(),
+                chain_id: 1,
+                address: address!("6B880d3B1FA2475C30Dc583726c56B4aFc66bD0b"),
+                creation_transaction: TxHash::from_str(
+                    "0x3812e48763d3631516206fb878007ed126223d5c31e8cc433c79659b8afbbf24",
+                )
+                .unwrap(),
+                deployer: address!("8525E2470D3f14057D92dC49A09BcC317175E875"),
+                constructor_arguments: Default::default(),
+                storage_layout: Default::default(),
+            },
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_direct_deployment() {
-        let fake_project = get_fake_project();
+        let fake_project = get_fake_project_1();
+        let rpc = RpcOpts { url: Some("http://localhost:8545".to_string()), ..Default::default() };
+
+        let tweaked_code = format!(
+            "{:?}",
+            tweak(&rpc, &fake_project, Bytes::from_str(FAKE_CREATION_CODE).unwrap()).await.unwrap()
+        );
+
+        assert!(
+            tweaked_code.starts_with(FAKE_DEPLOYED_CODE),
+            "the created code is not the same as the expected one"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn test_factory_deployment() {
+        let fake_project = get_fake_project_2();
         let rpc = RpcOpts { url: Some("http://localhost:8545".to_string()), ..Default::default() };
 
         let tweaked_code = format!(
