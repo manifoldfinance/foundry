@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
-use alloy_primitives::{Address, Bytes, TxHash};
+use alloy_primitives::{Address, Bytes, TxHash, U256};
 use alloy_providers::tmp::TempProvider;
 use alloy_rpc_types::{Block, BlockTransactions, Transaction};
 use eyre::{eyre, Context, Result};
 use forge::{
     executors::{DeployResult, EvmError, RawCallResult},
-    revm::primitives::{EnvWithHandlerCfg, SpecId},
+    revm::primitives::EnvWithHandlerCfg,
     utils::configure_tx_env,
 };
 use foundry_cli::{
@@ -14,6 +14,7 @@ use foundry_cli::{
     utils::{handle_traces, TraceResult},
 };
 use foundry_common::{is_known_system_sender, SYSTEM_TRANSACTION_TYPE};
+use foundry_compilers::EvmVersion;
 use foundry_evm::opts::EvmOpts;
 
 use clap::Parser;
@@ -31,6 +32,34 @@ pub struct ReplayArgs {
     #[arg()]
     transaction: String,
 
+    /// Executes the transaction only with the state from the previous block.
+    ///
+    /// May result in different results than the live execution!
+    #[arg(long, short)]
+    quick: bool,
+
+    /// Sets the number of assumed available compute units per second for this provider
+    ///
+    /// default value: 330
+    ///
+    /// See also, https://docs.alchemy.com/reference/compute-units#what-are-cups-compute-units-per-second
+    #[arg(long, alias = "cups", value_name = "CUPS")]
+    pub compute_units_per_second: Option<u64>,
+
+    /// Disables rate limiting for this node's provider.
+    ///
+    /// default value: false
+    ///
+    /// See also, https://docs.alchemy.com/reference/compute-units#what-are-cups-compute-units-per-second
+    #[arg(long, value_name = "NO_RATE_LIMITS", visible_alias = "no-rpc-rate-limit")]
+    pub no_rate_limit: bool,
+
+    /// The EVM version to use.
+    ///
+    /// Overrides the version specified in the config.
+    #[arg(long, short)]
+    evm_version: Option<EvmVersion>,
+
     #[command(flatten)]
     pub rpc: RpcOpts,
 }
@@ -45,7 +74,10 @@ impl ReplayArgs {
         let tweaked_code = cloned_project.tweaked_code(&self.rpc).await?;
         let figment = Config::figment_with_root(&root).merge(self.rpc);
         let evm_opts = figment.extract::<EvmOpts>()?;
-        let config = Config::try_from(figment)?.sanitized();
+        let mut config = Config::try_from(figment)?.sanitized();
+        config.evm_version = self.evm_version.unwrap_or_default();
+        let compute_units_per_second =
+            if self.no_rate_limit { Some(u64::MAX) } else { self.compute_units_per_second };
 
         let tx_hash: TxHash = self.transaction.parse().wrap_err("invalid transaction hash")?;
         let r = replay_tx_hash(
@@ -53,6 +85,8 @@ impl ReplayArgs {
             &evm_opts,
             tx_hash,
             &vec![(tweaked_addr, tweaked_code)].into_iter().collect(),
+            compute_units_per_second,
+            self.quick,
         )
         .await?;
 
@@ -68,6 +102,8 @@ async fn replay_tx_hash(
     evm_opts: &EvmOpts,
     tx_hash: TxHash,
     tweaks: &BTreeMap<Address, Bytes>,
+    compute_units_per_second: Option<u64>,
+    quick: bool,
 ) -> Result<ExecuteResult> {
     let mut config = config.clone();
 
@@ -75,6 +111,7 @@ async fn replay_tx_hash(
     let provider = foundry_common::provider::alloy::ProviderBuilder::new(
         &config.get_rpc_url_or_localhost_http()?,
     )
+    .compute_units_per_second_opt(compute_units_per_second)
     .build()?;
 
     // get transactiond ata
@@ -93,29 +130,35 @@ async fn replay_tx_hash(
     // we execute all transactions before the target transaction
     let mut env = executor.env.clone();
     adjust_block_env(&mut env, &block);
+    env.block.number = U256::from(tx_block_number);
     let BlockTransactions::Full(txs) = block.transactions else {
         return Err(eyre::eyre!("block transactions not found"));
     };
-    for (_, tx) in txs.into_iter().enumerate() {
-        // System transactions such as on L2s don't contain any pricing info so
-        // we skip them otherwise this would cause
-        // reverts
-        if is_known_system_sender(tx.from)
-            || tx.transaction_type.map(|ty| ty.to::<u64>()) == Some(SYSTEM_TRANSACTION_TYPE)
-        {
-            continue;
-        }
+    if !quick {
+        trace!("Executing transactions before the target transaction in the same block...");
+        for (_, tx) in txs.into_iter().enumerate() {
+            // System transactions such as on L2s don't contain any pricing info so
+            // we skip them otherwise this would cause
+            // reverts
+            if is_known_system_sender(tx.from)
+                || tx.transaction_type.map(|ty| ty.to::<u64>()) == Some(SYSTEM_TRANSACTION_TYPE)
+            {
+                continue;
+            }
 
-        if tx.hash == tx_hash {
-            // we reach the target transaction
-            break;
-        }
+            if tx.hash == tx_hash {
+                // we reach the target transaction
+                break;
+            }
 
-        // execute the transaction
-        let r = execute_tx(&mut executor, env.clone(), &tx)?;
+            // execute the transaction
+            trace!("Executing transaction: {:?}", tx.hash);
+            let _ = execute_tx(&mut executor, env.clone(), &tx)?;
+        }
     }
 
     // execute the target transaction
+    trace!("Executing target transaction: {:?}", tx.hash);
     let r = execute_tx(&mut executor, env, &tx)?;
     Ok(r)
 }
@@ -173,7 +216,8 @@ mod tests {
 
     use alloy_primitives::{Address, Bytes, TxHash};
     use foundry_cli::utils::handle_traces;
-    use foundry_config::{figment::Figment, Config};
+    use foundry_compilers::EvmVersion;
+    use foundry_config::{figment::Figment, find_project_root_path, Config};
     use foundry_evm::opts::EvmOpts;
 
     const RPC: &str = "http://localhost:8545";
@@ -183,18 +227,19 @@ mod tests {
         let tx: TxHash =
             "0xbfa440cd7df20320fe8400e4f61113379a018e3904eef7cf6085cf6cf22bcdb9".parse().unwrap();
 
-        let mut config = Config::default();
-        println!("{:?}", config);
-        let figment: Figment = config.clone().into();
+        let figment = Config::figment_with_root(find_project_root_path(None).unwrap());
         let evm_opts = figment.extract::<EvmOpts>().unwrap();
+        let mut config = Config::try_from(figment).unwrap().sanitized();
         config.eth_rpc_url = Some(RPC.to_string());
-        let r = super::replay_tx_hash(&config, &evm_opts, tx, &BTreeMap::default()).await.unwrap();
+        config.evm_version = EvmVersion::Shanghai;
+        let r = super::replay_tx_hash(&config, &evm_opts, tx, &BTreeMap::default(), None, false)
+            .await
+            .unwrap();
         let super::ExecuteResult::Call(result) = &r else {
             panic!("expected ExecuteResult::Call");
         };
-        // println!("{:?}", result);
         assert_eq!(result.reverted, false);
-        println!("gas: {}", result.gas_used);
+        assert_eq!(result.gas_used, 163_955);
         let r = r.trace_result().unwrap();
         handle_traces(r, &config, config.chain, vec![], false).await.unwrap();
     }
@@ -216,6 +261,8 @@ mod tests {
             &evm_opts,
             tx,
             &BTreeMap::from([(factory, tweaked_code)]),
+            None,
+            false,
         )
         .await
         .unwrap()
