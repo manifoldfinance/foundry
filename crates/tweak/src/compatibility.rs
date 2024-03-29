@@ -2,24 +2,24 @@
 //! The local project usually should be created by `forge clone` command.
 //! Users may modify the source code of the cloned project, but the storage layout should remain the same as the original contract.
 
-use std::{collections::BTreeMap, path::PathBuf};
+use std::collections::BTreeMap;
 
 use foundry_compilers::{artifacts::StorageLayout, ConfigurableContractArtifact};
 
-use crate::metadata::CloneMetadata;
+use crate::metadata::ClonedProject;
 
 /// Check the tweak compatibility of the project with the given root.
 /// The project is compatible if:
 /// - the project's storage layout is the same as the original contract.
 /// If the project is not compatible, an error is returned.
-pub fn check_compatibility(
-    _root: &PathBuf,
-    clone_metadata: &CloneMetadata,
-    artifact: &ConfigurableContractArtifact,
-) -> eyre::Result<()> {
+pub fn check_compatibility(cloned_project: &ClonedProject) -> eyre::Result<()> {
     // to check the storage layout compatibility, we need to download the original contract's code from etherscan and compile.
-    let original_layout = clone_metadata.storage_layout.to_owned();
-    let current_layout = artifact.storage_layout.to_owned().expect("storage layout is missing");
+    let original_layout = cloned_project.metadata.storage_layout.to_owned();
+    let current_layout = cloned_project
+        .main_artifact()?
+        .storage_layout
+        .to_owned()
+        .expect("storage layout is missing");
     check_storage_layout_compatibility(&original_layout, &current_layout)
 }
 
