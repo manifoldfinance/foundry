@@ -1,5 +1,8 @@
 use crate::cmd::{
-    bind::BindArgs, build::BuildArgs, cache::CacheArgs, clone::CloneArgs, config, coverage, create::CreateArgs, debug::DebugArgs, doc::DocArgs, flatten, fmt::FmtArgs, geiger, generate, init::InitArgs, inspect, install::InstallArgs, remappings::RemappingArgs, remove::RemoveArgs, replay::ReplayArgs, selectors::SelectorsSubcommands, snapshot, test, tree, update
+    bind::BindArgs, build::BuildArgs, cache::CacheArgs, clone::CloneArgs, config, coverage,
+    create::CreateArgs, debug::DebugArgs, doc::DocArgs, flatten, fmt::FmtArgs, geiger, generate,
+    init::InitArgs, inspect, install::InstallArgs, remappings::RemappingArgs, remove::RemoveArgs,
+    replay::ReplayArgs, selectors::SelectorsSubcommands, snapshot, test, tree, update,
 };
 use clap::{Parser, Subcommand, ValueHint};
 use forge_script::ScriptArgs;

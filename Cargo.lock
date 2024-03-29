@@ -3560,6 +3560,8 @@ name = "foundry-tweak"
 version = "0.2.0"
 dependencies = [
  "alloy-primitives",
+ "alloy-providers",
+ "alloy-rpc-types",
  "eyre",
  "foundry-block-explorers",
  "foundry-common",
@@ -3569,6 +3571,8 @@ dependencies = [
  "revm",
  "serde",
  "serde_json",
+ "tempfile",
+ "tokio",
  "toml 0.8.12",
  "vergen",
 ]

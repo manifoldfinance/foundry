@@ -64,9 +64,10 @@ impl TweakExecutor {
                 ));
             }
             // calculate the tweaked code
-            let tweaked_code =
-                generate_tweaked_code(&tweak.root, &tweak.metadata, &tweak.main_artifact()?)?;
-            Self::set_code(&mut db, tweak.metadata.address, tweaked_code)?;
+            // TODO (ZZ): fix later
+            // let tweaked_code =
+            //     generate_tweaked_code(&tweak.root, &tweak.metadata, &tweak.main_artifact()?)?;
+            // Self::set_code(&mut db, tweak.metadata.address, tweaked_code)?;
         }
 
         // construct the underlying executor

@@ -62,7 +62,8 @@ serde.workspace = true
 # alloy-dyn-abi.workspace = true
 # alloy-json-abi.workspace = true
 alloy-primitives = { workspace = true, features = ["serde"] }
-# alloy-rpc-types.workspace = true
+alloy-providers.workspace = true
+alloy-rpc-types.workspace = true
 
 # async-trait = "0.1"
 # clap = { version = "4", features = ["derive", "env", "unicode", "wrap_help"] }
@@ -84,7 +85,7 @@ serde_json.workspace = true
 # solang-parser.workspace = true
 # strum = { workspace = true, features = ["derive"] }
 # thiserror = "1"
-# tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time"] }
 toml = { version = "0.8", features = ["preserve_order"] }
 # toml_edit = "0.21"
 # watchexec = "2.3.2"
@@ -107,5 +108,5 @@ toml = { version = "0.8", features = ["preserve_order"] }
 # path-slash = "0.2"
 # pretty_assertions.workspace = true
 # svm = { package = "svm-rs", version = "0.4", default-features = false, features = ["rustls"] }
-# tempfile = "3"
+tempfile = "3"
 # tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }

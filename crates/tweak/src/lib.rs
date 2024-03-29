@@ -7,7 +7,7 @@ use eyre::{eyre, Result};
 
 pub use metadata::ClonedProject;
 
-pub fn tweak(cloned_project: &ClonedProject) -> Result<()> {
+pub async fn tweak(rpc_url: &str, cloned_project: &ClonedProject) -> Result<()> {
     // collect the clone metadata
     let metadata = cloned_project.metadata.clone();
 
@@ -20,7 +20,6 @@ pub fn tweak(cloned_project: &ClonedProject) -> Result<()> {
         })?;
 
     compatibility::check_storage_compatibility(cloned_project)?;
-    code::generate_tweaked_code(&cloned_project.root, &metadata, &artifact)?;
-
+    code::generate_tweaked_code(rpc_url, &cloned_project, &artifact).await?;
     Ok(())
 }
