@@ -6,7 +6,7 @@ use alloy_rpc_types::{Block, BlockTransactions, Transaction};
 use eyre::{eyre, Context, Result};
 use forge::{
     decode::decode_console_logs,
-    executors::{DeployResult, EvmError, RawCallResult},
+    executors::{DeployResult, EvmError, Executor, ExecutorBuilder, RawCallResult},
     revm::primitives::EnvWithHandlerCfg,
     utils::configure_tx_env,
 };
@@ -20,7 +20,7 @@ use foundry_evm::opts::EvmOpts;
 
 use clap::Parser;
 use foundry_config::{find_project_root_path, Config};
-use foundry_tweak::{executor::TweakExecutor, ClonedProject};
+use foundry_tweak::{build_tweaked_backend, ClonedProject};
 
 /// Replays an on-chain historical transaction locally on a fork of the blockchain with the on-chain contract tweaked by the current cloned project.
 /// In other words, `forge replay`:
@@ -162,7 +162,18 @@ async fn replay_tx_hash(
     let block = block.ok_or(eyre::eyre!("block not found"))?;
 
     config.fork_block_number = Some(tx_block_number - 1); // fork from the previous block
-    let mut executor = TweakExecutor::new(&config, evm_opts, tweaks).await?;
+
+    // build the executor
+    let mut evm_opts = evm_opts.clone();
+    evm_opts.fork_url = Some(config.get_rpc_url_or_localhost_http()?.into_owned());
+    evm_opts.fork_block_number = config.fork_block_number;
+    let env = evm_opts.evm_env().await?;
+    let fork = evm_opts.get_fork(&config, env.clone());
+    let backend = build_tweaked_backend(fork, tweaks)?;
+    let mut executor = ExecutorBuilder::new()
+        .inspectors(|stack| stack.trace(true))
+        .spec(config.evm_spec_id())
+        .build(env, backend);
 
     // set the state to the moment right before the transaction
     // we execute all transactions before the target transaction
@@ -240,7 +251,7 @@ impl ExecuteResult {
 }
 
 fn execute_tx(
-    executor: &mut TweakExecutor,
+    executor: &mut Executor,
     mut env: EnvWithHandlerCfg,
     tx: &Transaction,
 ) -> Result<ExecuteResult> {
