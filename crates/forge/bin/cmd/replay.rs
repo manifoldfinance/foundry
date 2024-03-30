@@ -30,7 +30,7 @@ use foundry_tweak::{build_tweaked_backend, ClonedProject};
 ///
 /// NOTE: `forge replay` can only be used on a `forge clone`d project, which contains the metadata
 /// of the on-chain instance of the contract.
-#[derive(Clone, Debug, Parser)]
+#[derive(Clone, Debug, Parser, Default)]
 pub struct ReplayArgs {
     #[arg()]
     transaction: String,
@@ -94,7 +94,7 @@ impl ReplayArgs {
         let tweaked_addr = cloned_project.metadata.address;
         let tweaked_code = cloned_project.tweaked_code(&self.rpc).await?;
 
-        let figment = Config::figment_with_root(&root).merge(self.rpc);
+        let figment = Config::figment_with_root(&root).merge(&self.rpc);
         let evm_opts = figment.extract::<EvmOpts>()?;
         let mut config = Config::try_from(figment)?.sanitized();
         config.evm_version = self.evm_version.unwrap_or_default();
@@ -102,17 +102,15 @@ impl ReplayArgs {
             if self.no_rate_limit { Some(u64::MAX) } else { self.compute_units_per_second };
 
         let tx_hash: TxHash = self.transaction.parse().wrap_err("invalid transaction hash")?;
-        let r = replay_tx_hash(
-            &config,
-            &evm_opts,
-            tx_hash,
-            &vec![(tweaked_addr, tweaked_code)].into_iter().collect(),
-            compute_units_per_second,
-            self.quick,
-            self.gas,
-            self.gas_price,
-        )
-        .await?;
+        let r = self
+            .replay_tx_hash(
+                &config,
+                &evm_opts,
+                tx_hash,
+                &vec![(tweaked_addr, tweaked_code)].into_iter().collect(),
+                compute_units_per_second,
+            )
+            .await?;
         let console_logs = r.console_logs();
         // print call trace
         let r = r.trace_result()?;
@@ -129,89 +127,91 @@ impl ReplayArgs {
 
         Ok(())
     }
-}
 
-async fn replay_tx_hash(
-    config: &Config,
-    evm_opts: &EvmOpts,
-    tx_hash: TxHash,
-    tweaks: &BTreeMap<Address, Bytes>,
-    compute_units_per_second: Option<u64>,
-    quick: bool,
-    gas: Option<u64>,
-    gas_price: Option<U128>,
-) -> Result<ExecuteResult> {
-    let mut config = config.clone();
+    async fn replay_tx_hash(
+        &self,
+        config: &Config,
+        evm_opts: &EvmOpts,
+        tx_hash: TxHash,
+        tweaks: &BTreeMap<Address, Bytes>,
+        compute_units_per_second: Option<u64>,
+    ) -> Result<ExecuteResult> {
+        let quick = self.quick;
+        let gas = self.gas;
+        let gas_price = self.gas_price;
 
-    // construct JSON-RPC provider
-    let provider = foundry_common::provider::alloy::ProviderBuilder::new(
-        &config.get_rpc_url_or_localhost_http()?,
-    )
-    .compute_units_per_second_opt(compute_units_per_second)
-    .build()?;
+        let mut config = config.clone();
 
-    // get transactiond data
-    let mut tx = provider.get_transaction_by_hash(tx_hash).await.unwrap();
-    let tx_block_number: u64 =
-        tx.block_number.ok_or(eyre!("transaction may still be pending"))?.to();
-    // If the gas is not specified, we use 2 times of the gas limit from the transaction
-    tx.gas = gas.map(U256::from).unwrap_or(tx.gas.saturating_add(tx.gas));
-    // Set the gas price if specified
-    tx.gas_price = gas_price.or(tx.gas_price);
+        // construct JSON-RPC provider
+        let provider = foundry_common::provider::alloy::ProviderBuilder::new(
+            &config.get_rpc_url_or_localhost_http()?,
+        )
+        .compute_units_per_second_opt(compute_units_per_second)
+        .build()?;
 
-    // get preceeding transactions in the same block
-    let block = provider.get_block(tx_block_number.into(), true).await.unwrap();
-    let block = block.ok_or(eyre::eyre!("block not found"))?;
+        // get transactiond data
+        let mut tx = provider.get_transaction_by_hash(tx_hash).await.unwrap();
+        let tx_block_number: u64 =
+            tx.block_number.ok_or(eyre!("transaction may still be pending"))?.to();
+        // If the gas is not specified, we use 2 times of the gas limit from the transaction
+        tx.gas = gas.map(U256::from).unwrap_or(tx.gas.saturating_add(tx.gas));
+        // Set the gas price if specified
+        tx.gas_price = gas_price.or(tx.gas_price);
 
-    config.fork_block_number = Some(tx_block_number - 1); // fork from the previous block
+        // get preceeding transactions in the same block
+        let block = provider.get_block(tx_block_number.into(), true).await.unwrap();
+        let block = block.ok_or(eyre::eyre!("block not found"))?;
 
-    // build the executor
-    let mut evm_opts = evm_opts.clone();
-    evm_opts.fork_url = Some(config.get_rpc_url_or_localhost_http()?.into_owned());
-    evm_opts.fork_block_number = config.fork_block_number;
-    let env = evm_opts.evm_env().await?;
-    let fork = evm_opts.get_fork(&config, env.clone());
-    let backend = build_tweaked_backend(fork, tweaks)?;
-    let mut executor = ExecutorBuilder::new()
-        .inspectors(|stack| stack.trace(true))
-        .spec(config.evm_spec_id())
-        .build(env, backend);
+        config.fork_block_number = Some(tx_block_number - 1); // fork from the previous block
 
-    // set the state to the moment right before the transaction
-    // we execute all transactions before the target transaction
-    let mut env = executor.env.clone();
-    adjust_block_env(&mut env, &block);
-    env.block.number = U256::from(tx_block_number);
-    let BlockTransactions::Full(txs) = block.transactions else {
-        return Err(eyre::eyre!("block transactions not found"));
-    };
-    if !quick {
-        trace!("Executing transactions before the target transaction in the same block...");
-        for tx in txs {
-            // System transactions such as on L2s don't contain any pricing info so
-            // we skip them otherwise this would cause
-            // reverts
-            if is_known_system_sender(tx.from) ||
-                tx.transaction_type.map(|ty| ty.to::<u64>()) == Some(SYSTEM_TRANSACTION_TYPE)
-            {
-                continue;
+        // build the executor
+        let mut evm_opts = evm_opts.clone();
+        evm_opts.fork_url = Some(config.get_rpc_url_or_localhost_http()?.into_owned());
+        evm_opts.fork_block_number = config.fork_block_number;
+        let env = evm_opts.evm_env().await?;
+        let fork = evm_opts.get_fork(&config, env.clone());
+        let backend = build_tweaked_backend(fork, tweaks)?;
+        let mut executor = ExecutorBuilder::new()
+            .inspectors(|stack| stack.trace(true))
+            .spec(config.evm_spec_id())
+            .build(env, backend);
+
+        // set the state to the moment right before the transaction
+        // we execute all transactions before the target transaction
+        let mut env = executor.env.clone();
+        adjust_block_env(&mut env, &block);
+        env.block.number = U256::from(tx_block_number);
+        let BlockTransactions::Full(txs) = block.transactions else {
+            return Err(eyre::eyre!("block transactions not found"));
+        };
+        if !quick {
+            trace!("Executing transactions before the target transaction in the same block...");
+            for tx in txs {
+                // System transactions such as on L2s don't contain any pricing info so
+                // we skip them otherwise this would cause
+                // reverts
+                if is_known_system_sender(tx.from) ||
+                    tx.transaction_type.map(|ty| ty.to::<u64>()) == Some(SYSTEM_TRANSACTION_TYPE)
+                {
+                    continue;
+                }
+
+                if tx.hash == tx_hash {
+                    // we reach the target transaction
+                    break;
+                }
+
+                // execute the transaction
+                trace!("Executing transaction: {:?}", tx.hash);
+                let _ = execute_tx(&mut executor, env.clone(), &tx)?;
             }
-
-            if tx.hash == tx_hash {
-                // we reach the target transaction
-                break;
-            }
-
-            // execute the transaction
-            trace!("Executing transaction: {:?}", tx.hash);
-            let _ = execute_tx(&mut executor, env.clone(), &tx)?;
         }
-    }
 
-    // execute the target transaction
-    trace!("Executing target transaction: {:?}", tx.hash);
-    let r = execute_tx(&mut executor, env, &tx)?;
-    Ok(r)
+        // execute the target transaction
+        trace!("Executing target transaction: {:?}", tx.hash);
+        let r = execute_tx(&mut executor, env, &tx)?;
+        Ok(r)
+    }
 }
 
 fn adjust_block_env(env: &mut EnvWithHandlerCfg, block: &Block) {
@@ -306,18 +306,11 @@ mod tests {
         let mut config = Config::try_from(figment).unwrap().sanitized();
         config.eth_rpc_url = Some(RPC.to_string());
         config.evm_version = EvmVersion::Shanghai;
-        let r = super::replay_tx_hash(
-            &config,
-            &evm_opts,
-            tx,
-            &BTreeMap::default(),
-            None,
-            false,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
+
+        let args =
+            super::ReplayArgs { quick: false, gas: None, gas_price: None, ..Default::default() };
+        let r =
+            args.replay_tx_hash(&config, &evm_opts, tx, &BTreeMap::default(), None).await.unwrap();
         let super::ExecuteResult::Call(result) = &r else {
             panic!("expected ExecuteResult::Call");
         };
@@ -339,18 +332,19 @@ mod tests {
         let evm_opts = figment.extract::<EvmOpts>().unwrap();
         config.eth_rpc_url = Some(RPC.to_string());
 
-        let r = super::replay_tx_hash(
-            &config,
-            &evm_opts,
-            tx,
-            &BTreeMap::from([(factory, tweaked_code)]),
-            None,
-            false,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
+        let args =
+            super::ReplayArgs { quick: false, gas: None, gas_price: None, ..Default::default() };
+
+        let r = args
+            .replay_tx_hash(
+                &config,
+                &evm_opts,
+                tx,
+                &BTreeMap::from([(factory, tweaked_code)]),
+                None,
+            )
+            .await
+            .unwrap();
         let r = r.trace_result().unwrap();
         assert!(!r.success);
         handle_traces(r, &config, config.chain, vec![], false).await.unwrap();
