@@ -22,12 +22,14 @@ use clap::Parser;
 use foundry_config::{find_project_root_path, Config};
 use foundry_tweak::{build_tweaked_backend, ClonedProject};
 
-/// Replays an on-chain historical transaction locally on a fork of the blockchain with the on-chain contract tweaked by the current cloned project.
-/// In other words, `forge replay`:
-/// 1. Fork the blockchain, and replace the code of the on-chain contract associated with the current cloned project (address defined in `.clone.meta`).
+/// Replays an on-chain historical transaction locally on a fork of the blockchain with the on-chain
+/// contract tweaked by the current cloned project. In other words, `forge replay`:
+/// 1. Fork the blockchain, and replace the code of the on-chain contract associated with the
+///    current cloned project (address defined in `.clone.meta`).
 /// 2. Replays the historical transaction on the forked blockchain.
 ///
-/// NOTE: `forge replay` can only be used on a `forge clone`d project, which contains the metadata of the on-chain instance of the contract.
+/// NOTE: `forge replay` can only be used on a `forge clone`d project, which contains the metadata
+/// of the on-chain instance of the contract.
 #[derive(Clone, Debug, Parser)]
 pub struct ReplayArgs {
     #[arg()]
@@ -185,12 +187,12 @@ async fn replay_tx_hash(
     };
     if !quick {
         trace!("Executing transactions before the target transaction in the same block...");
-        for (_, tx) in txs.into_iter().enumerate() {
+        for tx in txs {
             // System transactions such as on L2s don't contain any pricing info so
             // we skip them otherwise this would cause
             // reverts
-            if is_known_system_sender(tx.from)
-                || tx.transaction_type.map(|ty| ty.to::<u64>()) == Some(SYSTEM_TRANSACTION_TYPE)
+            if is_known_system_sender(tx.from) ||
+                tx.transaction_type.map(|ty| ty.to::<u64>()) == Some(SYSTEM_TRANSACTION_TYPE)
             {
                 continue;
             }
@@ -248,8 +250,7 @@ impl ExecuteResult {
             ExecuteResult::Revert(EvmError::Execution(e)) => &e.raw.logs,
             _ => return vec![],
         };
-        let console_logs = decode_console_logs(&raw_logs);
-        return console_logs;
+        decode_console_logs(raw_logs)
     }
 }
 
@@ -259,7 +260,8 @@ fn execute_tx(
     tx: &Transaction,
 ) -> Result<ExecuteResult> {
     configure_tx_env(&mut env, tx);
-    // in case users overrides gas price below EIP1559 base fee, we disable base fee for the transaction
+    // in case users overrides gas price below EIP1559 base fee, we disable base fee for the
+    // transaction
     if env
         .tx
         .gas_price
@@ -268,7 +270,7 @@ fn execute_tx(
     {
         env.cfg.disable_base_fee = true;
     }
-    if let Some(_) = tx.to {
+    if tx.to.is_some() {
         let r = executor.commit_tx_with_env(env.clone()).wrap_err_with(|| {
             format!("Failed to execute transaction: {:?} in block {}", tx.hash, env.block.number)
         })?;
@@ -319,7 +321,7 @@ mod tests {
         let super::ExecuteResult::Call(result) = &r else {
             panic!("expected ExecuteResult::Call");
         };
-        assert_eq!(result.reverted, false);
+        assert!(!result.reverted);
         assert_eq!(result.gas_used, 163_955);
         let r = r.trace_result().unwrap();
         handle_traces(r, &config, config.chain, vec![], false).await.unwrap();

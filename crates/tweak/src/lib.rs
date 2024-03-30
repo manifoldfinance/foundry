@@ -35,7 +35,7 @@ pub fn build_tweaked_backend(
 ) -> Result<Backend> {
     let mut backend = Backend::spawn(fork);
     for (address, code) in tweaks {
-        tweak_backend_once(&mut backend, address.clone(), code.clone())?;
+        tweak_backend_once(&mut backend, *address, code.clone())?;
     }
     Ok(backend)
 }
@@ -60,7 +60,7 @@ pub fn tweak_backend_once(
 
 pub fn tweak_backend(backend: &mut Backend, tweaks: &BTreeMap<Address, Bytes>) -> Result<()> {
     for (tweak_address, tweaked_code) in tweaks {
-        let mut info = backend.basic(tweak_address.clone())?.unwrap_or_default();
+        let mut info = backend.basic(*tweak_address)?.unwrap_or_default();
         let code_hash = if tweaked_code.as_ref().is_empty() {
             revm::primitives::KECCAK_EMPTY
         } else {
@@ -69,7 +69,7 @@ pub fn tweak_backend(backend: &mut Backend, tweaks: &BTreeMap<Address, Bytes>) -
         info.code_hash = code_hash;
         info.code =
             Some(Bytecode::new_raw(alloy_primitives::Bytes(tweaked_code.clone().0)).to_checked());
-        backend.insert_account_info(tweak_address.clone(), info);
+        backend.insert_account_info(*tweak_address, info);
     }
 
     Ok(())

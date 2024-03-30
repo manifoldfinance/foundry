@@ -1,6 +1,7 @@
 //! Compatibility check of tweaking an on-chain contract with a local cloned project.
 //! The local project usually should be created by `forge clone` command.
-//! Users may modify the source code of the cloned project, but the storage layout should remain the same as the original contract.
+//! Users may modify the source code of the cloned project, but the storage layout should remain the
+//! same as the original contract.
 
 use std::collections::BTreeMap;
 
@@ -13,7 +14,8 @@ use crate::metadata::ClonedProject;
 /// - the project's storage layout is the same as the original contract.
 /// If the project is not compatible, an error is returned.
 pub fn check_storage_compatibility(cloned_project: &ClonedProject) -> eyre::Result<()> {
-    // to check the storage layout compatibility, we need to download the original contract's code from etherscan and compile.
+    // to check the storage layout compatibility, we need to download the original contract's code
+    // from etherscan and compile.
     let original_layout = cloned_project.metadata.storage_layout.to_owned();
     let current_layout = cloned_project
         .main_artifact()?
@@ -24,7 +26,8 @@ pub fn check_storage_compatibility(cloned_project: &ClonedProject) -> eyre::Resu
 }
 
 /// Check that the current storage layout is compatible with the original storage layout.
-/// Each state variable in the original storage layout should have the same slot in the current storage layout.
+/// Each state variable in the original storage layout should have the same slot in the current
+/// storage layout.
 pub fn check_storage_layout_compatibility(
     original: &StorageLayout,
     current: &StorageLayout,
@@ -62,9 +65,9 @@ pub fn check_storage_layout_compatibility(
         }
         let current_var = current_var.unwrap();
         // offset, slot, type should be the same
-        if original_var.offset != current_var.offset
-            || original_var.slot != current_var.slot
-            || original_var.storage_type != current_var.storage_type
+        if original_var.offset != current_var.offset ||
+            original_var.slot != current_var.slot ||
+            original_var.storage_type != current_var.storage_type
         {
             return Err(eyre::eyre!(
                 "the storage variable {} has different layout in the current contract",

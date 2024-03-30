@@ -12,8 +12,8 @@ use foundry_config::Config;
 
 /// ClonedProject represents a foundry project that is cloned by the `forge clone` command.
 /// It couples with an on-chain contract instance.
-/// Users may modify the source code of the cloned project, but the storage layout should remain the same as the original contract.
-/// The cloned project will be used to tweak the on-chain contract.
+/// Users may modify the source code of the cloned project, but the storage layout should remain the
+/// same as the original contract. The cloned project will be used to tweak the on-chain contract.
 #[derive(Debug, Clone)]
 pub struct ClonedProject {
     pub root: PathBuf,
@@ -104,8 +104,9 @@ impl ClonedProject {
     }
 }
 
-/// CloneMetadata stores the metadata that are not included by `foundry.toml` but necessary for a cloned contract.
-/// This struct is the twin of the `CloneMetadata` struct in the `clone` command of `forge` crate.
+/// CloneMetadata stores the metadata that are not included by `foundry.toml` but necessary for a
+/// cloned contract. This struct is the twin of the `CloneMetadata` struct in the `clone` command of
+/// `forge` crate.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct CloneMetadata {
     /// The path to the source file that contains the contract declaration.
@@ -132,7 +133,7 @@ impl CloneMetadata {
     /// If the file does not exist, an error is returned.
     pub fn load_with_root(root: impl Into<PathBuf>) -> Result<CloneMetadata> {
         let path = root.into().join(".clone.meta");
-        let metadata = std::fs::read_to_string(&path)?;
+        let metadata = std::fs::read_to_string(path)?;
         let metadata = serde_json::from_str(&metadata)?;
         Ok(metadata)
     }

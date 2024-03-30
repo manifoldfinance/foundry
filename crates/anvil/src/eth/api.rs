@@ -2284,9 +2284,9 @@ impl EthApi {
                     // make no sense (as the TX would still succeed).
                     highest_gas_limit = mid_gas_limit;
                 }
-                GasEstimationCallResult::OutOfGas
-                | GasEstimationCallResult::Revert(_)
-                | GasEstimationCallResult::EvmError(_) => {
+                GasEstimationCallResult::OutOfGas |
+                GasEstimationCallResult::Revert(_) |
+                GasEstimationCallResult::EvmError(_) => {
                     // If the transaction failed, we can set a floor for the lowest gas limit at the
                     // current midpoint, as spending any less gas would make no
                     // sense (as the TX would still revert due to lack of gas).
@@ -2616,31 +2616,31 @@ impl TryFrom<Result<(InstructionResult, Option<Output>, u64, State)>> for GasEst
 
                 InstructionResult::Revert => Ok(Self::Revert(output.map(|o| o.into_data()))),
 
-                InstructionResult::OutOfGas
-                | InstructionResult::MemoryOOG
-                | InstructionResult::MemoryLimitOOG
-                | InstructionResult::PrecompileOOG
-                | InstructionResult::InvalidOperandOOG => Ok(Self::OutOfGas),
+                InstructionResult::OutOfGas |
+                InstructionResult::MemoryOOG |
+                InstructionResult::MemoryLimitOOG |
+                InstructionResult::PrecompileOOG |
+                InstructionResult::InvalidOperandOOG => Ok(Self::OutOfGas),
 
-                InstructionResult::OpcodeNotFound
-                | InstructionResult::CallNotAllowedInsideStatic
-                | InstructionResult::StateChangeDuringStaticCall
-                | InstructionResult::InvalidFEOpcode
-                | InstructionResult::InvalidJump
-                | InstructionResult::NotActivated
-                | InstructionResult::StackUnderflow
-                | InstructionResult::StackOverflow
-                | InstructionResult::OutOfOffset
-                | InstructionResult::CreateCollision
-                | InstructionResult::OverflowPayment
-                | InstructionResult::PrecompileError
-                | InstructionResult::NonceOverflow
-                | InstructionResult::CreateContractSizeLimit
-                | InstructionResult::CreateContractStartingWithEF
-                | InstructionResult::CreateInitCodeSizeLimit
-                | InstructionResult::FatalExternalError
-                | InstructionResult::OutOfFunds
-                | InstructionResult::CallTooDeep => Ok(Self::EvmError(exit)),
+                InstructionResult::OpcodeNotFound |
+                InstructionResult::CallNotAllowedInsideStatic |
+                InstructionResult::StateChangeDuringStaticCall |
+                InstructionResult::InvalidFEOpcode |
+                InstructionResult::InvalidJump |
+                InstructionResult::NotActivated |
+                InstructionResult::StackUnderflow |
+                InstructionResult::StackOverflow |
+                InstructionResult::OutOfOffset |
+                InstructionResult::CreateCollision |
+                InstructionResult::OverflowPayment |
+                InstructionResult::PrecompileError |
+                InstructionResult::NonceOverflow |
+                InstructionResult::CreateContractSizeLimit |
+                InstructionResult::CreateContractStartingWithEF |
+                InstructionResult::CreateInitCodeSizeLimit |
+                InstructionResult::FatalExternalError |
+                InstructionResult::OutOfFunds |
+                InstructionResult::CallTooDeep => Ok(Self::EvmError(exit)),
             },
         }
     }

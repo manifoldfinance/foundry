@@ -78,7 +78,8 @@ pub struct RunArgs {
     #[arg(long, value_name = "NO_RATE_LIMITS", visible_alias = "no-rpc-rate-limit")]
     pub no_rate_limit: bool,
 
-    /// One `forge clone`d project that will be used to tweak the code of the corresponding on-chain contract.
+    /// One `forge clone`d project that will be used to tweak the code of the corresponding
+    /// on-chain contract.
     ///
     /// This option can be used multiple times to tweak multiple contracts.
     #[arg(long, value_name = "CLONED_PROJECT")]
@@ -118,8 +119,8 @@ impl RunArgs {
             .wrap_err_with(|| format!("tx not found: {:?}", tx_hash))?;
 
         // check if the tx is a system transaction
-        if is_known_system_sender(tx.from)
-            || tx.transaction_type.map(|ty| ty.to::<u64>()) == Some(SYSTEM_TRANSACTION_TYPE)
+        if is_known_system_sender(tx.from) ||
+            tx.transaction_type.map(|ty| ty.to::<u64>()) == Some(SYSTEM_TRANSACTION_TYPE)
         {
             return Err(eyre::eyre!(
                 "{:?} is a system transaction.\nReplaying system transactions is currently not supported.",
@@ -174,7 +175,7 @@ impl RunArgs {
                 cloned_projects.push(project);
             }
             let tweak_map = foundry_tweak::build_tweak_map(&cloned_projects, &self.rpc).await?;
-            tweak_backend(&mut (*executor).backend, &tweak_map)?;
+            tweak_backend(&mut executor.backend, &tweak_map)?;
         }
 
         let mut env =
@@ -196,9 +197,9 @@ impl RunArgs {
                     // System transactions such as on L2s don't contain any pricing info so
                     // we skip them otherwise this would cause
                     // reverts
-                    if is_known_system_sender(tx.from)
-                        || tx.transaction_type.map(|ty| ty.to::<u64>())
-                            == Some(SYSTEM_TRANSACTION_TYPE)
+                    if is_known_system_sender(tx.from) ||
+                        tx.transaction_type.map(|ty| ty.to::<u64>()) ==
+                            Some(SYSTEM_TRANSACTION_TYPE)
                     {
                         update_progress!(pb, index);
                         continue;
