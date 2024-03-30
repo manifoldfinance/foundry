@@ -219,6 +219,9 @@ fn adjust_block_env(env: &mut EnvWithHandlerCfg, block: &Block) {
     env.block.prevrandao = Some(block.header.mix_hash.unwrap_or_default());
     env.block.basefee = block.header.base_fee_per_gas.unwrap_or_default();
     env.block.gas_limit = block.header.gas_limit;
+    if let Some(excess_blob_gas) = block.header.excess_blob_gas {
+        env.block.set_blob_excess_gas_and_price(excess_blob_gas.to::<u64>());
+    }
 }
 
 enum ExecuteResult {

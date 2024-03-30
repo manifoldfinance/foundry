@@ -2,7 +2,7 @@
 //! The contract should from a cloned project created by `forge clone` command.
 //! The generation has to happen after the compatibility check.
 
-use alloy_primitives::{Address, Bytes};
+use alloy_primitives::{Address, Bytes, U256};
 use alloy_providers::tmp::TempProvider;
 use alloy_rpc_types::{BlockId, BlockTransactions};
 use eyre::{eyre, Context, Result};
@@ -157,9 +157,13 @@ async fn tweak(
 
     // round 2: tweak the creation code
     inspector.prepare_for_tweak()?;
-    // disable gas_limit for the inspector
+    // disable gas_limit and decrease gas_fee for the inspector
     env.cfg.disable_block_gas_limit = true;
-    env.tx.gas_limit *= 2;
+    env.cfg.disable_base_fee = true;
+    // increase gas_limit and decrease gas_price for the transaction
+    env.tx.gas_limit = env.tx.gas_limit.checked_mul(2).ok_or(eyre!("gas limit overflow"))?;
+    env.tx.gas_price =
+        env.tx.gas_price.checked_div(U256::from(2)).ok_or(eyre!("divided by zero"))?;
     // we do not care about the execution result in this round
     db.inspect(&mut env, &mut inspector)?;
 
@@ -235,6 +239,7 @@ async fn prepare_backend(
         return Err(eyre::eyre!("block transactions not found"));
     };
 
+    // update block env
     env.block.number =
         block.header.number.expect("block number is not found. Maybe it is not mined yet?");
     env.block.timestamp = block.header.timestamp;
@@ -243,6 +248,9 @@ async fn prepare_backend(
     env.block.prevrandao = Some(block.header.mix_hash.unwrap_or_default());
     env.block.basefee = block.header.base_fee_per_gas.unwrap_or_default();
     env.block.gas_limit = block.header.gas_limit;
+    if let Some(excess_blob_gas) = block.header.excess_blob_gas {
+        env.block.set_blob_excess_gas_and_price(excess_blob_gas.to::<u64>());
+    }
 
     for tx in txs {
         // skip system transactions
