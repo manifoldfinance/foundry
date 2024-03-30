@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use alloy_primitives::{Address, Bytes, ChainId, TxHash};
 use eyre::{eyre, Result};
@@ -14,11 +17,15 @@ use foundry_config::Config;
 /// It couples with an on-chain contract instance.
 /// Users may modify the source code of the cloned project, but the storage layout should remain the
 /// same as the original contract. The cloned project will be used to tweak the on-chain contract.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ClonedProject {
     pub root: PathBuf,
     pub config: Config,
     pub metadata: CloneMetadata,
+
+    // cache
+    pub(crate) _compile_output: Arc<Mutex<Option<ProjectCompileOutput>>>,
+    pub(crate) _main_artifact: Arc<Mutex<Option<ConfigurableContractArtifact>>>,
 }
 
 impl PartialEq for ClonedProject {
@@ -42,6 +49,18 @@ impl Ord for ClonedProject {
 }
 
 impl ClonedProject {
+    fn set_cache<T>(cache: Arc<Mutex<Option<T>>>, compile_output: T) {
+        *cache.clone().lock().unwrap() = Some(compile_output);
+    }
+    fn get_cache<T: Clone>(cache: Arc<Mutex<Option<T>>>) -> T {
+        // cache.clone().lock().unwrap().unwrap()
+        let lock_result = cache.lock().expect("Failed to lock the cache");
+        (*lock_result).clone().expect("Value not present")
+    }
+    fn is_cached<T>(cache: Arc<Mutex<Option<T>>>) -> bool {
+        cache.clone().lock().unwrap().is_some()
+    }
+
     /// Load the cloned project from the root directory of the project.
     /// If the clone metadata file does not exist, an error is returned.
     pub fn load_with_root(root: impl Into<PathBuf>) -> Result<ClonedProject> {
@@ -51,13 +70,24 @@ impl ClonedProject {
         let config = Config::load();
         std::env::set_current_dir(cwd)?;
         let metadata = CloneMetadata::load_with_root(&root)?;
-        Ok(ClonedProject { root, config, metadata })
+        Ok(ClonedProject {
+            root,
+            config,
+            metadata,
+            _compile_output: Default::default(),
+            _main_artifact: Default::default(),
+        })
     }
 
     /// Compile the project and return the artifacts.
     /// The compile output is cached.
     /// A workaround for the insufficient implementation of Config::load_with_root.
     pub fn compile_safe(&self) -> Result<ProjectCompileOutput> {
+        // check the cache
+        if Self::is_cached(self._compile_output.clone()) {
+            return Ok(Self::get_cache(self._compile_output.clone()));
+        }
+
         // load the foundry config
         // XXX (ZZ): some insufficient implementation of Config::load_with_root
         // prevents us from invoking this function directly
@@ -70,11 +100,19 @@ impl ClonedProject {
         let output = ProjectCompiler::new().compile(&config.project()?)?;
 
         std::env::set_current_dir(cwd)?;
-        Ok(output)
+
+        // cache the output
+        Self::set_cache(self._compile_output.clone(), output);
+        Ok(Self::get_cache(self._compile_output.clone()))
     }
 
     /// Get the artifact of the main contract of the project.
     pub fn main_artifact(&self) -> Result<ConfigurableContractArtifact> {
+        // check the cache
+        if Self::is_cached(self._main_artifact.clone()) {
+            return Ok(Self::get_cache(self._main_artifact.clone()));
+        }
+
         let output = self.compile_safe()?;
         let (_, _, artifact) = output
             .artifacts_with_files()
@@ -82,7 +120,10 @@ impl ClonedProject {
             .ok_or_else(|| {
                 eyre!("the contract {} is not found in the project", self.metadata.target_contract)
             })?;
-        Ok(artifact.to_owned())
+
+        // cache the artifact
+        Self::set_cache(self._main_artifact.clone(), artifact.clone());
+        Ok(Self::get_cache(self._main_artifact.clone()))
     }
 
     /// Get the tweaked code of the main contract of the project.
@@ -107,7 +148,7 @@ impl ClonedProject {
 /// CloneMetadata stores the metadata that are not included by `foundry.toml` but necessary for a
 /// cloned contract. This struct is the twin of the `CloneMetadata` struct in the `clone` command of
 /// `forge` crate.
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct CloneMetadata {
     /// The path to the source file that contains the contract declaration.
     /// The path is relative to the root directory of the project.

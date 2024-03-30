@@ -22,7 +22,7 @@ pub async fn build_tweak_data(projects: &Vec<ClonedProject>, rpc: &RpcOpts) -> R
     for project in projects {
         let metadata = &project.metadata;
         let address = metadata.address;
-        let code = code::generate_tweaked_code(rpc, project).await?;
+        let code = project.tweaked_code(rpc).await?;
         tweak_data.insert(address, code);
     }
     Ok(tweak_data)

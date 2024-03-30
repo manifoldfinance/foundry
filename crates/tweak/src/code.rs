@@ -257,8 +257,8 @@ async fn prepare_backend(
 
     for tx in txs {
         // skip system transactions
-        if is_known_system_sender(tx.from) ||
-            tx.transaction_type.map(|ty| ty.to::<u64>()) == Some(SYSTEM_TRANSACTION_TYPE)
+        if is_known_system_sender(tx.from)
+            || tx.transaction_type.map(|ty| ty.to::<u64>()) == Some(SYSTEM_TRANSACTION_TYPE)
         {
             continue;
         }
@@ -324,6 +324,7 @@ mod tests {
                 constructor_arguments: Default::default(),
                 storage_layout: Default::default(),
             },
+            ..Default::default()
         }
     }
 
