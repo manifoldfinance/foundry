@@ -5,6 +5,7 @@ use alloy_providers::tmp::TempProvider;
 use alloy_rpc_types::{Block, BlockTransactions, Transaction};
 use eyre::{eyre, Context, Result};
 use forge::{
+    decode::decode_console_logs,
     executors::{DeployResult, EvmError, RawCallResult},
     revm::primitives::EnvWithHandlerCfg,
     utils::configure_tx_env,
@@ -110,9 +111,19 @@ impl ReplayArgs {
             self.gas_price,
         )
         .await?;
-
+        let console_logs = r.console_logs();
+        // print call trace
         let r = r.trace_result()?;
         handle_traces(r, &config, config.chain, vec![], false).await?;
+
+        // print logs if any
+        if !console_logs.is_empty() {
+            println!("Logs:");
+            for log in console_logs {
+                println!("  {log}");
+            }
+            println!();
+        }
 
         Ok(())
     }
@@ -215,6 +226,16 @@ impl ExecuteResult {
             }
         }
     }
+
+    pub fn console_logs(&self) -> Vec<String> {
+        let raw_logs = match self {
+            ExecuteResult::Call(r) => &r.logs,
+            ExecuteResult::Create(r) => &r.raw.logs,
+            ExecuteResult::Revert(_) => return vec![],
+        };
+        let console_logs = decode_console_logs(&raw_logs);
+        return console_logs;
+    }
 }
 
 fn execute_tx(
@@ -312,9 +333,8 @@ mod tests {
             None,
         )
         .await
-        .unwrap()
-        .trace_result()
         .unwrap();
+        let r = r.trace_result().unwrap();
         assert!(!r.success);
         handle_traces(r, &config, config.chain, vec![], false).await.unwrap();
     }
