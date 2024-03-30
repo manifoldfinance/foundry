@@ -7,7 +7,10 @@ use revm::{
     primitives::{Bytecode, Env, SpecId},
     Database,
 };
-use std::ops::{Deref, DerefMut};
+use std::{
+    collections::BTreeMap,
+    ops::{Deref, DerefMut},
+};
 
 /// A default executor with tracing enabled
 pub struct TracingExecutor {
@@ -37,22 +40,23 @@ impl TracingExecutor {
         env: revm::primitives::Env,
         fork: Option<CreateFork>,
         version: Option<EvmVersion>,
-        tweaks: Vec<(Address, Bytes)>,
+        tweaks: &BTreeMap<Address, Bytes>,
         debug: bool,
     ) -> eyre::Result<Self> {
         let mut this = Self::new(env, fork, version, debug);
         let backend = &mut this.executor.backend;
         for (tweak_address, tweaked_code) in tweaks {
-            let mut info = backend.basic(tweak_address)?.unwrap_or_default();
+            let mut info = backend.basic(tweak_address.clone())?.unwrap_or_default();
             let code_hash = if tweaked_code.as_ref().is_empty() {
                 revm::primitives::KECCAK_EMPTY
             } else {
                 B256::from_slice(&alloy_primitives::keccak256(tweaked_code.as_ref())[..])
             };
             info.code_hash = code_hash;
-            info.code =
-                Some(Bytecode::new_raw(alloy_primitives::Bytes(tweaked_code.0)).to_checked());
-            backend.insert_account_info(tweak_address, info);
+            info.code = Some(
+                Bytecode::new_raw(alloy_primitives::Bytes(tweaked_code.clone().0)).to_checked(),
+            );
+            backend.insert_account_info(tweak_address.clone(), info);
         }
         Ok(this)
     }

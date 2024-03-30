@@ -7,12 +7,27 @@ use std::collections::BTreeMap;
 use alloy_primitives::{keccak256, Address, Bytes, B256};
 use eyre::Result;
 
+use foundry_cli::opts::RpcOpts;
 use foundry_evm::{backend::Backend, fork::CreateFork};
 pub use metadata::ClonedProject;
 use revm::{
     primitives::{Bytecode, KECCAK_EMPTY},
     Database,
 };
+
+pub async fn build_tweak_map(
+    projects: &Vec<ClonedProject>,
+    rpc: &RpcOpts,
+) -> Result<BTreeMap<Address, Bytes>> {
+    let mut tweaks = BTreeMap::new();
+    for project in projects {
+        let metadata = &project.metadata;
+        let address = metadata.address;
+        let code = code::generate_tweaked_code(rpc, project).await?;
+        tweaks.insert(address, code);
+    }
+    Ok(tweaks)
+}
 
 pub fn build_tweaked_backend(
     fork: Option<CreateFork>,

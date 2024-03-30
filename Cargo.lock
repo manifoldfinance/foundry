@@ -1325,6 +1325,7 @@ dependencies = [
  "foundry-config",
  "foundry-evm",
  "foundry-test-utils",
+ "foundry-tweak",
  "foundry-wallets",
  "futures",
  "indicatif",

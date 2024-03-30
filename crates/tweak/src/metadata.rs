@@ -99,7 +99,7 @@ impl ClonedProject {
         super::compatibility::check_storage_compatibility(self)?;
 
         // get tweaked code
-        let code = super::code::generate_tweaked_code(rpc, self, &self.main_artifact()?).await?;
+        let code = super::code::generate_tweaked_code(rpc, self).await?;
         Ok(code)
     }
 }

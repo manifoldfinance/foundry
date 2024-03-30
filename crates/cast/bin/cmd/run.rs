@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use alloy_primitives::U256;
 use alloy_providers::tmp::TempProvider;
 use alloy_rpc_types::BlockTransactions;
@@ -74,6 +76,12 @@ pub struct RunArgs {
     /// See also, https://docs.alchemy.com/reference/compute-units#what-are-cups-compute-units-per-second
     #[arg(long, value_name = "NO_RATE_LIMITS", visible_alias = "no-rpc-rate-limit")]
     pub no_rate_limit: bool,
+
+    /// One `forge clone`d project that will be used to tweak the code of the corresponding on-chain contract.
+    ///
+    /// This option can be used multiple times to tweak multiple contracts.
+    #[arg(long, value_name = "CLONED_PROJECT")]
+    pub tweak: Vec<PathBuf>,
 }
 
 impl RunArgs {
@@ -88,8 +96,8 @@ impl RunArgs {
             eprintln!("WARNING: --trace-printer is deprecated and has no effect\n");
         }
 
-        let figment =
-            Config::figment_with_root(find_project_root_path(None).unwrap()).merge(self.rpc);
+        let figment = Config::figment_with_root(find_project_root_path(None).unwrap())
+            .merge(self.rpc.clone());
         let evm_opts = figment.extract::<EvmOpts>()?;
         let mut config = Config::try_from(figment)?.sanitized();
 
@@ -153,7 +161,27 @@ impl RunArgs {
             }
         }
 
-        let mut executor = TracingExecutor::new(env.clone(), fork, evm_version, self.debug);
+        let mut executor = if self.tweak.is_empty() {
+            TracingExecutor::new(env.clone(), fork, evm_version, self.debug)
+        } else {
+            // If user specified tweak projects, we need to tweak the code of the contracts
+            let mut cloned_projects: Vec<foundry_tweak::ClonedProject> = vec![];
+            for path in self.tweak.iter() {
+                let project =
+                    foundry_tweak::ClonedProject::load_with_root(path).wrap_err_with(|| {
+                        format!("Failed to load tweak project from path: {:?}", path)
+                    })?;
+                cloned_projects.push(project);
+            }
+            let tweak_map = foundry_tweak::build_tweak_map(&cloned_projects, &self.rpc).await?;
+            TracingExecutor::new_with_contract_tweaks(
+                env.clone(),
+                fork,
+                evm_version,
+                &tweak_map,
+                self.debug,
+            )?
+        };
         let mut env =
             EnvWithHandlerCfg::new_with_spec_id(Box::new(env.clone()), executor.spec_id());
 

@@ -121,13 +121,10 @@ impl Inspector<&mut Backend> for TweakInspctor {
     }
 }
 
-pub async fn generate_tweaked_code(
-    rpc: &RpcOpts,
-    project: &ClonedProject,
-    artifact: &ConfigurableContractArtifact,
-) -> Result<Bytes> {
+pub async fn generate_tweaked_code(rpc: &RpcOpts, project: &ClonedProject) -> Result<Bytes> {
     // prepare the deployment bytecode (w/ parameters)
-    let tweaked_creation_code = prepare_tweaked_creation_code(&project, artifact)?;
+    let artifact = project.main_artifact()?;
+    let tweaked_creation_code = prepare_tweaked_creation_code(&project, &artifact)?;
 
     // let's tweak!
     tweak(rpc, project, tweaked_creation_code).await
