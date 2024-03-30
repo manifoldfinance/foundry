@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use alloy_primitives::{Address, Bytes, TxHash, U256};
+use alloy_primitives::{Address, Bytes, TxHash, U128, U256};
 use alloy_providers::tmp::TempProvider;
 use alloy_rpc_types::{Block, BlockTransactions, Transaction};
 use eyre::{eyre, Context, Result};
@@ -54,6 +54,23 @@ pub struct ReplayArgs {
     #[arg(long, value_name = "NO_RATE_LIMITS", visible_alias = "no-rpc-rate-limit")]
     pub no_rate_limit: bool,
 
+    /// Overrides the gas limit for the transaction.
+    #[arg(
+        long,
+        short,
+        value_name = "GAS",
+        help = "Override the gas limit for the transaction. If not set, two times of the gas limit from the transaction is used."
+    )]
+    pub gas: Option<u64>,
+
+    /// Overrides the gas price (or base fee in EIP1559) used for the transaction
+    #[arg(
+        long,
+        value_name = "GAS_PRICE",
+        help = "Override the gas price for the transaction. If not set, the gas price from the transaction is used."
+    )]
+    pub gas_price: Option<U128>,
+
     /// The EVM version to use.
     ///
     /// Overrides the version specified in the config.
@@ -89,6 +106,8 @@ impl ReplayArgs {
             &vec![(tweaked_addr, tweaked_code)].into_iter().collect(),
             compute_units_per_second,
             self.quick,
+            self.gas,
+            self.gas_price,
         )
         .await?;
 
@@ -106,6 +125,8 @@ async fn replay_tx_hash(
     tweaks: &BTreeMap<Address, Bytes>,
     compute_units_per_second: Option<u64>,
     quick: bool,
+    gas: Option<u64>,
+    gas_price: Option<U128>,
 ) -> Result<ExecuteResult> {
     let mut config = config.clone();
 
@@ -116,10 +137,14 @@ async fn replay_tx_hash(
     .compute_units_per_second_opt(compute_units_per_second)
     .build()?;
 
-    // get transactiond ata
-    let tx = provider.get_transaction_by_hash(tx_hash).await.unwrap();
+    // get transactiond data
+    let mut tx = provider.get_transaction_by_hash(tx_hash).await.unwrap();
     let tx_block_number: u64 =
         tx.block_number.ok_or(eyre!("transaction may still be pending"))?.to();
+    // If the gas is not specified, we use 2 times of the gas limit from the transaction
+    tx.gas = gas.map(U256::from).unwrap_or(tx.gas.saturating_add(tx.gas));
+    // Set the gas price if specified
+    tx.gas_price = gas_price.or(tx.gas_price);
 
     // get preceeding transactions in the same block
     let block = provider.get_block(tx_block_number.into(), true).await.unwrap();
@@ -198,6 +223,15 @@ fn execute_tx(
     tx: &Transaction,
 ) -> Result<ExecuteResult> {
     configure_tx_env(&mut env, tx);
+    // in case users overrides gas price below EIP1559 base fee, we disable base fee for the transaction
+    if env
+        .tx
+        .gas_price
+        .saturating_sub(env.tx.gas_priority_fee.unwrap_or_default())
+        .lt(&env.block.basefee)
+    {
+        env.cfg.disable_base_fee = true;
+    }
     if let Some(_) = tx.to {
         let r = executor.commit_tx_with_env(env.clone()).wrap_err_with(|| {
             format!("Failed to execute transaction: {:?} in block {}", tx.hash, env.block.number)
@@ -234,9 +268,18 @@ mod tests {
         let mut config = Config::try_from(figment).unwrap().sanitized();
         config.eth_rpc_url = Some(RPC.to_string());
         config.evm_version = EvmVersion::Shanghai;
-        let r = super::replay_tx_hash(&config, &evm_opts, tx, &BTreeMap::default(), None, false)
-            .await
-            .unwrap();
+        let r = super::replay_tx_hash(
+            &config,
+            &evm_opts,
+            tx,
+            &BTreeMap::default(),
+            None,
+            false,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
         let super::ExecuteResult::Call(result) = &r else {
             panic!("expected ExecuteResult::Call");
         };
@@ -265,6 +308,8 @@ mod tests {
             &BTreeMap::from([(factory, tweaked_code)]),
             None,
             false,
+            None,
+            None,
         )
         .await
         .unwrap()
