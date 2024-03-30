@@ -231,7 +231,8 @@ impl ExecuteResult {
         let raw_logs = match self {
             ExecuteResult::Call(r) => &r.logs,
             ExecuteResult::Create(r) => &r.raw.logs,
-            ExecuteResult::Revert(_) => return vec![],
+            ExecuteResult::Revert(EvmError::Execution(e)) => &e.raw.logs,
+            _ => return vec![],
         };
         let console_logs = decode_console_logs(&raw_logs);
         return console_logs;
