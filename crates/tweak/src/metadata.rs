@@ -67,7 +67,7 @@ impl ClonedProject {
         // compile the project to get the current artifacts
         let mut config = self.config.clone();
         config.extra_output.push(ContractOutputSelection::StorageLayout);
-        let output = ProjectCompiler::new().compile(&self.config.project()?)?;
+        let output = ProjectCompiler::new().compile(&config.project()?)?;
 
         std::env::set_current_dir(cwd)?;
         Ok(output)

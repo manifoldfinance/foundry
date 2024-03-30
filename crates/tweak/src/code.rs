@@ -238,6 +238,15 @@ async fn prepare_backend(
         return Err(eyre::eyre!("block transactions not found"));
     };
 
+    env.block.number =
+        block.header.number.expect("block number is not found. Maybe it is not mined yet?");
+    env.block.timestamp = block.header.timestamp;
+    env.block.coinbase = block.header.miner;
+    env.block.difficulty = block.header.difficulty;
+    env.block.prevrandao = Some(block.header.mix_hash.unwrap_or_default());
+    env.block.basefee = block.header.base_fee_per_gas.unwrap_or_default();
+    env.block.gas_limit = block.header.gas_limit;
+
     for tx in txs {
         // skip system transactions
         if is_known_system_sender(tx.from)

@@ -67,11 +67,13 @@ pub struct ReplayArgs {
 impl ReplayArgs {
     /// Runs the `forge replay` command.
     /// Logic is akin to the `cast run` command.
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
+        self.rpc.url = self.rpc.url.or(Some("http://localhost:8545".to_string()));
         let root = find_project_root_path(None).unwrap();
         let cloned_project = ClonedProject::load_with_root(&root)?;
         let tweaked_addr = cloned_project.metadata.address;
         let tweaked_code = cloned_project.tweaked_code(&self.rpc).await?;
+
         let figment = Config::figment_with_root(&root).merge(self.rpc);
         let evm_opts = figment.extract::<EvmOpts>()?;
         let mut config = Config::try_from(figment)?.sanitized();
