@@ -20,6 +20,7 @@ foundry-debugger.workspace = true
 foundry-cheatcodes.workspace = true
 foundry-wallets.workspace = true
 foundry-linking.workspace = true
+foundry-tweak.workspace = true
 
 hex.workspace = true
 serde.workspace = true

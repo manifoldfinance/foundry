@@ -174,7 +174,7 @@ impl RunArgs {
                     })?;
                 cloned_projects.push(project);
             }
-            let tweak_map = foundry_tweak::build_tweak_map(&cloned_projects, &self.rpc).await?;
+            let tweak_map = foundry_tweak::build_tweak_data(&cloned_projects, &self.rpc).await?;
             tweak_backend(&mut executor.backend, &tweak_map)?;
         }
 

@@ -48,7 +48,10 @@ use foundry_evm::{
 };
 use foundry_wallets::MultiWalletOpts;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::PathBuf,
+};
 use yansi::Paint;
 
 mod artifacts;
@@ -179,6 +182,20 @@ pub struct ScriptArgs {
     /// `test` and `script` are aliases for `.t.sol` and `.s.sol`.
     #[arg(long, num_args(1..))]
     pub skip: Option<Vec<SkipBuildFilter>>,
+
+    /// One `forge clone`d project that will be used to tweak the code of the corresponding
+    /// on-chain contract.
+    ///
+    /// This option can be used multiple times to tweak multiple contracts.
+    #[arg(
+        long,
+        value_name = "CLONED_PROJECT",
+        conflicts_with = "skip_simulation",
+        conflicts_with = "broadcast",
+        conflicts_with = "resume",
+        conflicts_with = "verify"
+    )]
+    pub tweak: Vec<PathBuf>,
 
     #[command(flatten)]
     pub opts: CoreBuildArgs,

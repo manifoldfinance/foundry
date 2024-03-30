@@ -11,9 +11,12 @@ use alloy_primitives::{Address, Bytes, U64};
 use alloy_rpc_types::request::TransactionRequest;
 use async_recursion::async_recursion;
 use ethers_providers::Middleware;
-use eyre::Result;
+use eyre::{Context, Result};
 use foundry_cheatcodes::ScriptWallets;
-use foundry_cli::utils::{ensure_clean_constructor, needs_setup};
+use foundry_cli::{
+    opts::RpcOpts,
+    utils::{ensure_clean_constructor, needs_setup},
+};
 use foundry_common::{
     fmt::{format_token, format_token_raw},
     provider::ethers::{get_http_provider, RpcUrl},
@@ -30,6 +33,7 @@ use foundry_evm::{
         render_trace_arena, CallTraceDecoder, CallTraceDecoderBuilder, TraceKind,
     },
 };
+use foundry_tweak::{build_tweak_data, tweak_backend, TweakData};
 use futures::future::join_all;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
@@ -72,12 +76,33 @@ impl LinkedState {
 
         ensure_clean_constructor(&abi)?;
 
+        // prepare tweak
+        let tweak = if !args.tweak.is_empty() {
+            let cloned_projects = args
+                .tweak
+                .iter()
+                .map(|path| {
+                    foundry_tweak::ClonedProject::load_with_root(path).wrap_err_with(|| {
+                        format!("Failed to load tweak project from path: {:?}", path)
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let rpc =
+                RpcOpts { url: script_config.evm_opts.fork_url.clone(), ..Default::default() };
+
+            build_tweak_data(&cloned_projects, &rpc).await?
+        } else {
+            TweakData::new()
+        };
+
         Ok(PreExecutionState {
             args,
             script_config,
             script_wallets,
             build_data,
             execution_data: ExecutionData { func, calldata, bytecode, abi },
+            tweak_data: tweak,
         })
     }
 }
@@ -89,6 +114,7 @@ pub struct PreExecutionState {
     pub script_wallets: ScriptWallets,
     pub build_data: LinkedBuildData,
     pub execution_data: ExecutionData,
+    pub tweak_data: TweakData,
 }
 
 impl PreExecutionState {
@@ -100,6 +126,7 @@ impl PreExecutionState {
             .script_config
             .get_runner_with_cheatcodes(self.script_wallets.clone(), self.args.debug)
             .await?;
+        tweak_backend(&mut runner.executor.backend, &self.tweak_data)?;
         let mut result = self.execute_with_runner(&mut runner).await?;
 
         // If we have a new sender from execution, we need to use it to deploy libraries and relink

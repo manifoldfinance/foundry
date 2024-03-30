@@ -29,6 +29,13 @@ pub struct DebugArgs {
     #[arg(long, short, default_value = "run()", value_name = "SIGNATURE")]
     pub sig: String,
 
+    /// One `forge clone`d project that will be used to tweak the code of the corresponding
+    /// on-chain contract.
+    ///
+    /// This option can be used multiple times to tweak multiple contracts.
+    #[arg(long, value_name = "CLONED_PROJECT")]
+    pub tweak: Vec<PathBuf>,
+
     /// Open the script in the debugger.
     #[arg(long)]
     pub debug: bool,
@@ -50,8 +57,9 @@ impl DebugArgs {
             gas_estimate_multiplier: 130,
             opts: self.opts,
             evm_opts: self.evm_opts,
-            debug: true,
+            debug: self.debug,
             retry: RETRY_VERIFY_ON_CREATE,
+            tweak: self.tweak,
             ..Default::default()
         };
         script.run_script().await

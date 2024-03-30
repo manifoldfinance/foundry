@@ -15,26 +15,22 @@ use revm::{
     Database,
 };
 
-pub async fn build_tweak_map(
-    projects: &Vec<ClonedProject>,
-    rpc: &RpcOpts,
-) -> Result<BTreeMap<Address, Bytes>> {
-    let mut tweaks = BTreeMap::new();
+pub type TweakData = BTreeMap<Address, Bytes>;
+
+pub async fn build_tweak_data(projects: &Vec<ClonedProject>, rpc: &RpcOpts) -> Result<TweakData> {
+    let mut tweak_data = BTreeMap::new();
     for project in projects {
         let metadata = &project.metadata;
         let address = metadata.address;
         let code = code::generate_tweaked_code(rpc, project).await?;
-        tweaks.insert(address, code);
+        tweak_data.insert(address, code);
     }
-    Ok(tweaks)
+    Ok(tweak_data)
 }
 
-pub fn build_tweaked_backend(
-    fork: Option<CreateFork>,
-    tweaks: &BTreeMap<Address, Bytes>,
-) -> Result<Backend> {
+pub fn build_tweaked_backend(fork: Option<CreateFork>, tweak_data: &TweakData) -> Result<Backend> {
     let mut backend = Backend::spawn(fork);
-    for (address, code) in tweaks {
+    for (address, code) in tweak_data {
         tweak_backend_once(&mut backend, *address, code.clone())?;
     }
     Ok(backend)
@@ -58,8 +54,8 @@ pub fn tweak_backend_once(
     Ok(())
 }
 
-pub fn tweak_backend(backend: &mut Backend, tweaks: &BTreeMap<Address, Bytes>) -> Result<()> {
-    for (tweak_address, tweaked_code) in tweaks {
+pub fn tweak_backend(backend: &mut Backend, tweak_data: &TweakData) -> Result<()> {
+    for (tweak_address, tweaked_code) in tweak_data {
         let mut info = backend.basic(*tweak_address)?.unwrap_or_default();
         let code_hash = if tweaked_code.as_ref().is_empty() {
             revm::primitives::KECCAK_EMPTY
