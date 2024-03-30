@@ -20,6 +20,7 @@ use foundry_evm::{
     opts::EvmOpts,
     utils::configure_tx_env,
 };
+use foundry_tweak::tweak_backend;
 
 /// CLI arguments for `cast run`.
 #[derive(Clone, Debug, Parser)]
@@ -161,9 +162,8 @@ impl RunArgs {
             }
         }
 
-        let mut executor = if self.tweak.is_empty() {
-            TracingExecutor::new(env.clone(), fork, evm_version, self.debug)
-        } else {
+        let mut executor = TracingExecutor::new(env.clone(), fork, evm_version, self.debug);
+        if !self.tweak.is_empty() {
             // If user specified tweak projects, we need to tweak the code of the contracts
             let mut cloned_projects: Vec<foundry_tweak::ClonedProject> = vec![];
             for path in self.tweak.iter() {
@@ -174,14 +174,9 @@ impl RunArgs {
                 cloned_projects.push(project);
             }
             let tweak_map = foundry_tweak::build_tweak_map(&cloned_projects, &self.rpc).await?;
-            TracingExecutor::new_with_contract_tweaks(
-                env.clone(),
-                fork,
-                evm_version,
-                &tweak_map,
-                self.debug,
-            )?
-        };
+            tweak_backend(&mut (*executor).backend, &tweak_map)?;
+        }
+
         let mut env =
             EnvWithHandlerCfg::new_with_spec_id(Box::new(env.clone()), executor.spec_id());
 

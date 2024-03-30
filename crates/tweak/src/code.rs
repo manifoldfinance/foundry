@@ -2,6 +2,8 @@
 //! The contract should from a cloned project created by `forge clone` command.
 //! The generation has to happen after the compatibility check.
 
+use std::borrow::Cow;
+
 use alloy_primitives::{Address, Bytes, U256};
 use alloy_providers::tmp::TempProvider;
 use alloy_rpc_types::{BlockId, BlockTransactions};
@@ -191,7 +193,8 @@ async fn prepare_backend(
     project: &ClonedProject,
 ) -> Result<(Backend, EnvWithHandlerCfg)> {
     // get rpc_url
-    let rpc_url = &rpc.url(Some(&project.config))?.ok_or(eyre!("rpc url is not found"))?;
+    let rpc_url =
+        &rpc.url(Some(&project.config))?.unwrap_or(Cow::Borrowed("http://localhost:8545"));
 
     // prepare the RPC provider
     let provider = ProviderBuilder::new(rpc_url)

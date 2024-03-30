@@ -35,13 +35,13 @@ pub fn build_tweaked_backend(
 ) -> Result<Backend> {
     let mut backend = Backend::spawn(fork);
     for (address, code) in tweaks {
-        tweak_backend(&mut backend, address.clone(), code.clone())?;
+        tweak_backend_once(&mut backend, address.clone(), code.clone())?;
     }
     Ok(backend)
 }
 
 /// Tweak the code of a contract in the blockchain backend.
-pub fn tweak_backend(
+pub fn tweak_backend_once(
     backend: &mut Backend,
     tweak_address: Address,
     tweaked_code: Bytes,
@@ -55,5 +55,22 @@ pub fn tweak_backend(
     info.code_hash = code_hash;
     info.code = Some(Bytecode::new_raw(alloy_primitives::Bytes(tweaked_code.0)).to_checked());
     backend.insert_account_info(tweak_address, info);
+    Ok(())
+}
+
+pub fn tweak_backend(backend: &mut Backend, tweaks: &BTreeMap<Address, Bytes>) -> Result<()> {
+    for (tweak_address, tweaked_code) in tweaks {
+        let mut info = backend.basic(tweak_address.clone())?.unwrap_or_default();
+        let code_hash = if tweaked_code.as_ref().is_empty() {
+            revm::primitives::KECCAK_EMPTY
+        } else {
+            B256::from_slice(&alloy_primitives::keccak256(tweaked_code.as_ref())[..])
+        };
+        info.code_hash = code_hash;
+        info.code =
+            Some(Bytecode::new_raw(alloy_primitives::Bytes(tweaked_code.clone().0)).to_checked());
+        backend.insert_account_info(tweak_address.clone(), info);
+    }
+
     Ok(())
 }

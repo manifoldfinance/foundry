@@ -1,16 +1,9 @@
 use crate::executors::{Executor, ExecutorBuilder};
-use alloy_primitives::{Address, Bytes, B256};
 use foundry_compilers::EvmVersion;
 use foundry_config::{utils::evm_spec_id, Chain, Config};
 use foundry_evm_core::{backend::Backend, fork::CreateFork, opts::EvmOpts};
-use revm::{
-    primitives::{Bytecode, Env, SpecId},
-    Database,
-};
-use std::{
-    collections::BTreeMap,
-    ops::{Deref, DerefMut},
-};
+use revm::primitives::{Env, SpecId};
+use std::ops::{Deref, DerefMut};
 
 /// A default executor with tracing enabled
 pub struct TracingExecutor {
@@ -33,32 +26,6 @@ impl TracingExecutor {
                 .spec(evm_spec_id(&version.unwrap_or_default()))
                 .build(env, db),
         }
-    }
-
-    /// Create a new TweakExecutor with the given configuration and contract code tweaks.
-    pub fn new_with_contract_tweaks(
-        env: revm::primitives::Env,
-        fork: Option<CreateFork>,
-        version: Option<EvmVersion>,
-        tweaks: &BTreeMap<Address, Bytes>,
-        debug: bool,
-    ) -> eyre::Result<Self> {
-        let mut this = Self::new(env, fork, version, debug);
-        let backend = &mut this.executor.backend;
-        for (tweak_address, tweaked_code) in tweaks {
-            let mut info = backend.basic(tweak_address.clone())?.unwrap_or_default();
-            let code_hash = if tweaked_code.as_ref().is_empty() {
-                revm::primitives::KECCAK_EMPTY
-            } else {
-                B256::from_slice(&alloy_primitives::keccak256(tweaked_code.as_ref())[..])
-            };
-            info.code_hash = code_hash;
-            info.code = Some(
-                Bytecode::new_raw(alloy_primitives::Bytes(tweaked_code.clone().0)).to_checked(),
-            );
-            backend.insert_account_info(tweak_address.clone(), info);
-        }
-        Ok(this)
     }
 
     /// Returns the spec id of the executor
