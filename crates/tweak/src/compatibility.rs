@@ -33,8 +33,8 @@ pub fn check_storage_layout_compatibility(
     current: &StorageLayout,
 ) -> eyre::Result<()> {
     // TODO: need a more sophisticated comparison algorithm.
-    // The current implementation is a naive one that only checks the slot and offset of each storage variables.
-    // check storage variables
+    // The current implementation is a naive one that only checks the slot and offset of each
+    // storage variables. check storage variables
     let current_storage_var_map = BTreeMap::from_iter(
         current.storage.iter().map(|v| (format!("{}:{}", v.contract, v.label), v)),
     );
