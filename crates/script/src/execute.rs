@@ -88,8 +88,14 @@ impl LinkedState {
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
-            let rpc =
-                RpcOpts { url: script_config.evm_opts.fork_url.clone(), ..Default::default() };
+            let rpc = RpcOpts {
+                url: script_config.evm_opts.fork_url.clone().or(args
+                    .evm_opts
+                    .fork_url
+                    .clone()
+                    .or(Some("http://localhost:8545".to_string()))),
+                ..Default::default()
+            };
 
             build_tweak_data(&cloned_projects, &rpc).await?
         } else {
