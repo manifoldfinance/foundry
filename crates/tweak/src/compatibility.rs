@@ -32,24 +32,8 @@ pub fn check_storage_layout_compatibility(
     original: &StorageLayout,
     current: &StorageLayout,
 ) -> eyre::Result<()> {
-    // check storage types
-    for (type_name, original_type) in original.types.iter() {
-        let current_type = current.types.get(type_name);
-        if current_type.is_none() {
-            return Err(eyre::eyre!(
-                "the storage type {} is missing in the current contract",
-                type_name
-            ));
-        }
-        let current_type = current_type.unwrap();
-        if original_type != current_type {
-            return Err(eyre::eyre!(
-                "the storage type {} has different layout in the current contract",
-                type_name
-            ));
-        }
-    }
-
+    // TODO: need a more sophisticated comparison algorithm.
+    // The current implementation is a naive one that only checks the slot and offset of each storage variables.
     // check storage variables
     let current_storage_var_map = BTreeMap::from_iter(
         current.storage.iter().map(|v| (format!("{}:{}", v.contract, v.label), v)),
@@ -65,10 +49,7 @@ pub fn check_storage_layout_compatibility(
         }
         let current_var = current_var.unwrap();
         // offset, slot, type should be the same
-        if original_var.offset != current_var.offset ||
-            original_var.slot != current_var.slot ||
-            original_var.storage_type != current_var.storage_type
-        {
+        if original_var.offset != current_var.offset || original_var.slot != current_var.slot {
             return Err(eyre::eyre!(
                 "the storage variable {} has different layout in the current contract",
                 original_var.label
@@ -277,6 +258,96 @@ mod tests {
                 }
               }
             }"#,
+        );
+        assert!(super::check_storage_layout_compatibility(&original, &current).is_ok());
+    }
+    #[test]
+    pub fn test_storage_layout_struct() {
+        let original = load_json_layout(
+            r#"{
+        "storage": [
+          {
+            "astId": 1039,
+            "contract": "src/BatchSwap.sol:BatchSwap",
+            "label": "payment",
+            "offset": 0,
+            "slot": "14",
+            "type": "t_struct(paymentStruct)1028_storage"
+          }
+        ],
+        "types": {
+          "t_struct(paymentStruct)1028_storage": {
+            "encoding": "inplace",
+            "key": null,
+            "label": "struct BatchSwap.paymentStruct",
+            "numberOfBytes": "64",
+            "value": null,
+            "other": {
+                "members": [
+                    {
+                        "astId": 1025,
+                        "contract": "src/BatchSwap.sol:BatchSwap",
+                        "label": "status",
+                        "offset": "0",
+                        "slot": "0",
+                        "type": "t_bool"
+                    },
+                    {
+                        "astId": 1027,
+                        "contract": "src/BatchSwap.sol:BatchSwap",
+                        "label": "value",
+                        "offset": "0",
+                        "slot": "1",
+                        "type": "t_uint256"
+                    }
+                ]
+            }
+          }
+        }
+    }"#,
+        );
+        let current = load_json_layout(
+            r#"{
+      "storage": [
+        {
+          "astId": 1039,
+          "contract": "src/BatchSwap.sol:BatchSwap",
+          "label": "payment",
+          "offset": 0,
+          "slot": "14",
+          "type": "t_struct(paymentStruct)666_storage"
+        }
+      ],
+      "types": {
+        "t_struct(paymentStruct)666_storage": {
+          "encoding": "inplace",
+          "key": null,
+          "label": "struct BatchSwap.paymentStruct",
+          "numberOfBytes": "64",
+          "value": null,
+          "other": {
+              "members": [
+                  {
+                      "astId": 663,
+                      "contract": "src/BatchSwap.sol:BatchSwap",
+                      "label": "status",
+                      "offset": "0",
+                      "slot": "0",
+                      "type": "t_bool"
+                  },
+                  {
+                      "astId": 664,
+                      "contract": "src/BatchSwap.sol:BatchSwap",
+                      "label": "value",
+                      "offset": "0",
+                      "slot": "1",
+                      "type": "t_uint256"
+                  }
+              ]
+          }
+        }
+      }
+  }"#,
         );
         assert!(super::check_storage_layout_compatibility(&original, &current).is_ok());
     }
