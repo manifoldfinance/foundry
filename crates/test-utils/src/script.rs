@@ -289,8 +289,7 @@ impl ScriptOutcome {
             ScriptOutcome::OkNoEndpoint |
             ScriptOutcome::OkSimulation |
             ScriptOutcome::OkBroadcast |
-            ScriptOutcome::WarnSpecifyDeployer |
-            ScriptOutcome::OkRun => false,
+            ScriptOutcome::WarnSpecifyDeployer => false,
             ScriptOutcome::MissingSender |
             ScriptOutcome::MissingWallet |
             ScriptOutcome::StaticCallNotAllowed |
