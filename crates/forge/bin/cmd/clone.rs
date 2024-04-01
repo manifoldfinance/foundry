@@ -108,10 +108,24 @@ impl CloneArgs {
         fs::remove_file(root.join("script/Counter.s.sol"))?;
 
         // dump sources and update the remapping in configuration
+        let Settings { remappings: original_remappings, .. } = meta.settings()?;
         let remappings = dump_sources(&meta, &root)?;
         Config::update_at(&root, |config, doc| {
             let profile = config.profile.as_str().as_str();
             let mut remapping_array = toml_edit::Array::new();
+            // original remappings
+            for r in original_remappings.iter() {
+                // we should update its remapped path in the same way as we dump sources
+                // i.e., remove prefix `contracts` (if any) and add prefix `src`
+                let mut r = r.to_owned();
+                let new_path = PathBuf::from(r.path.clone())
+                    .strip_prefix("contracts")
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or(PathBuf::from(r.path));
+                r.path = PathBuf::from("src").join(new_path).to_string_lossy().to_string();
+                remapping_array.push(r.to_string());
+            }
+            // new remappings
             for r in remappings {
                 remapping_array.push(r.to_string());
             }
@@ -220,18 +234,9 @@ fn update_config_by_metadata(
     // get optimizer settings
     // XXX (ZZ): we ignore `model_checker`, `debug`, and `output_selection` for now,
     // it seems they do not have impacts on the actual compilation
-    let Settings {
-        optimizer,
-        libraries,
-        evm_version,
-        via_ir,
-        stop_after,
-        remappings,
-        metadata,
-        ..
-    } = meta.settings()?;
+    let Settings { optimizer, libraries, evm_version, via_ir, stop_after, metadata, .. } =
+        meta.settings()?;
     eyre::ensure!(stop_after.is_none(), "stop_after should be None");
-    eyre::ensure!(remappings.is_empty(), "remappings should be empty");
 
     update_if_needed!(["evm_version"], evm_version.map(|v| v.to_string()));
     update_if_needed!(["via_ir"], via_ir);
@@ -500,6 +505,20 @@ mod tests {
             root: project_root.clone(),
             etherscan: Default::default(),
             quiet: false,
+            enable_git: false,
+        };
+        args.run().await.unwrap();
+        assert_successful_compilation(&project_root);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    #[serial]
+    async fn test_clone_contract_with_original_remappings() {
+        let project_root = tempfile::tempdir().unwrap().path().to_path_buf();
+        let args = CloneArgs {
+            address: "0x9ab6b21cdf116f611110b048987e58894786c244".to_string(),
+            root: project_root.clone(),
+            etherscan: Default::default(),
             enable_git: false,
         };
         args.run().await.unwrap();
