@@ -36,6 +36,13 @@ pub struct DebugArgs {
     #[arg(long, value_name = "CLONED_PROJECT")]
     pub tweak: Vec<PathBuf>,
 
+    /// When tweaking the contract, use the quick mode where we replay the creation transaction
+    /// only with the state from the previous block.
+    ///
+    /// May result in different results than the live execution!
+    #[arg(long, requires = "tweak")]
+    pub tweak_quick: bool,
+
     /// Open the script in the debugger.
     #[arg(long)]
     pub debug: bool,
@@ -60,6 +67,7 @@ impl DebugArgs {
             debug: self.debug,
             retry: RETRY_VERIFY_ON_CREATE,
             tweak: self.tweak,
+            tweak_quick: self.tweak_quick,
             ..Default::default()
         };
         script.run_script().await

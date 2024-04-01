@@ -197,6 +197,13 @@ pub struct ScriptArgs {
     )]
     pub tweak: Vec<PathBuf>,
 
+    /// When tweaking the contract, use the quick mode where we replay the creation transaction
+    /// only with the state from the previous block.
+    ///
+    /// May result in different results than the live execution!
+    #[arg(long, requires = "tweak")]
+    pub tweak_quick: bool,
+
     #[command(flatten)]
     pub opts: CoreBuildArgs,
 

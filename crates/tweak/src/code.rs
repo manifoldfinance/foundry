@@ -123,13 +123,17 @@ impl Inspector<&mut Backend> for TweakInspctor {
     }
 }
 
-pub async fn generate_tweaked_code(rpc: &RpcOpts, project: &ClonedProject) -> Result<Bytes> {
+pub async fn generate_tweaked_code(
+    rpc: &RpcOpts,
+    project: &ClonedProject,
+    quick: bool,
+) -> Result<Bytes> {
     // prepare the deployment bytecode (w/ parameters)
     let artifact = project.main_artifact()?;
     let tweaked_creation_code = prepare_tweaked_creation_code(project, &artifact)?;
 
     // let's tweak!
-    tweak(rpc, project, tweaked_creation_code).await
+    tweak(rpc, project, tweaked_creation_code, quick).await
 }
 
 // tweak the contract creation code
@@ -137,9 +141,10 @@ async fn tweak(
     rpc: &RpcOpts,
     project: &ClonedProject,
     tweaked_creation_code: Bytes,
+    quick: bool,
 ) -> Result<Bytes> {
     // prepare the execution backend
-    let (mut db, mut env) = prepare_backend(rpc, project).await?;
+    let (mut db, mut env) = prepare_backend(rpc, project, quick).await?;
 
     // let hook into the creation process
     let mut inspector =
@@ -192,6 +197,7 @@ fn prepare_tweaked_creation_code(
 async fn prepare_backend(
     rpc: &RpcOpts,
     project: &ClonedProject,
+    quick: bool,
 ) -> Result<(Backend, EnvWithHandlerCfg)> {
     // get rpc_url
     let rpc_url =
@@ -232,13 +238,20 @@ async fn prepare_backend(
     }
 
     // get all transactions with receipts
-    let BlockTransactions::Full(txs) = block.transactions else {
-        return Err(eyre::eyre!("block transactions not found"));
+    let txs_with_receipt = if !quick {
+        let BlockTransactions::Full(txs) = block.transactions else {
+            return Err(eyre::eyre!("block transactions not found"));
+        };
+        let Some(recipts) = provider.get_block_receipts(block_number.into()).await? else {
+            return Err(eyre::eyre!("block receipts not found"));
+        };
+        txs.into_iter().zip(recipts.into_iter()).collect()
+    } else {
+        vec![(
+            provider.get_transaction_by_hash(project.metadata.creation_transaction).await?,
+            tx_receipt,
+        )]
     };
-    let Some(recipts) = provider.get_block_receipts(block_number.into()).await? else {
-        return Err(eyre::eyre!("block receipts not found"));
-    };
-    let txs_with_receipt = txs.into_iter().zip(recipts.into_iter()).collect();
 
     // get the figment from the cloned project's config
     let mut config = project.config.clone();
@@ -259,19 +272,21 @@ async fn prepare_backend(
 
     // a loop to probe the proper EVM version
     let mut spec_id = config.evm_spec_id();
-    loop {
-        // get backend and executor
-        let db = Backend::spawn(evm_opts.get_fork(&config, env.clone()));
-        // create the executor and the corresponding env
-        let executor = ExecutorBuilder::new().spec(spec_id).build(env.clone(), db);
+    if !quick {
+        loop {
+            // get backend and executor
+            let db = Backend::spawn(evm_opts.get_fork(&config, env.clone()));
+            // create the executor and the corresponding env
+            let executor = ExecutorBuilder::new().spec(spec_id).build(env.clone(), db);
 
-        match probe_evm_version(executor, &block_env, &txs_with_receipt, None) {
-            Ok(_) => {
-                break;
-            }
-            Err(_) => {
-                spec_id = SpecId::try_from_u8((spec_id as u8) + 1)
-                    .ok_or(eyre!("failed to probe a proper EVM version"))?;
+            match probe_evm_version(executor, &block_env, &txs_with_receipt, None) {
+                Ok(_) => {
+                    break;
+                }
+                Err(_) => {
+                    spec_id = SpecId::try_from_u8((spec_id as u8) + 1)
+                        .ok_or(eyre!("failed to probe a proper EVM version"))?;
+                }
             }
         }
     }
@@ -473,7 +488,9 @@ mod tests {
 
         let tweaked_code = format!(
             "{:?}",
-            tweak(&rpc, &fake_project, Bytes::from_str(FAKE_CREATION_CODE).unwrap()).await.unwrap()
+            tweak(&rpc, &fake_project, Bytes::from_str(FAKE_CREATION_CODE).unwrap(), false)
+                .await
+                .unwrap()
         );
 
         assert!(
@@ -492,7 +509,9 @@ mod tests {
 
         let tweaked_code = format!(
             "{:?}",
-            tweak(&rpc, &fake_project, Bytes::from_str(FAKE_CREATION_CODE).unwrap()).await.unwrap()
+            tweak(&rpc, &fake_project, Bytes::from_str(FAKE_CREATION_CODE).unwrap(), false)
+                .await
+                .unwrap()
         );
 
         assert!(

@@ -97,7 +97,7 @@ impl LinkedState {
                 ..Default::default()
             };
 
-            build_tweak_data(&cloned_projects, &rpc).await?
+            build_tweak_data(&cloned_projects, &rpc, args.tweak_quick).await?
         } else {
             TweakData::new()
         };

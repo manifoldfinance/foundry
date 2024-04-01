@@ -127,7 +127,7 @@ impl ClonedProject {
     }
 
     /// Get the tweaked code of the main contract of the project.
-    pub async fn tweaked_code(&self, rpc: &RpcOpts) -> Result<Bytes> {
+    pub async fn tweaked_code(&self, rpc: &RpcOpts, quick: bool) -> Result<Bytes> {
         // check chain id
         if self.config.chain.unwrap_or_default().id() != self.metadata.chain_id {
             return Err(eyre!(
@@ -140,7 +140,7 @@ impl ClonedProject {
         super::compatibility::check_storage_compatibility(self)?;
 
         // get tweaked code
-        let code = super::code::generate_tweaked_code(rpc, self).await?;
+        let code = super::code::generate_tweaked_code(rpc, self, quick).await?;
         Ok(code)
     }
 }

@@ -17,12 +17,16 @@ use revm::{
 
 pub type TweakData = BTreeMap<Address, Bytes>;
 
-pub async fn build_tweak_data(projects: &Vec<ClonedProject>, rpc: &RpcOpts) -> Result<TweakData> {
+pub async fn build_tweak_data(
+    projects: &Vec<ClonedProject>,
+    rpc: &RpcOpts,
+    quick: bool,
+) -> Result<TweakData> {
     let mut tweak_data = BTreeMap::new();
     for project in projects {
         let metadata = &project.metadata;
         let address = metadata.address;
-        let code = project.tweaked_code(rpc).await?;
+        let code = project.tweaked_code(rpc, quick).await?;
         tweak_data.insert(address, code);
     }
     Ok(tweak_data)

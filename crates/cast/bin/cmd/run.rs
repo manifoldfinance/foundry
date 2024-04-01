@@ -38,6 +38,7 @@ pub struct RunArgs {
     trace_printer: bool,
 
     /// Executes the transaction only with the state from the previous block.
+    /// Note that this also include transactions that are used for tweaking code.
     ///
     /// May result in different results than the live execution!
     #[arg(long, short)]
@@ -174,7 +175,8 @@ impl RunArgs {
                     })?;
                 cloned_projects.push(project);
             }
-            let tweak_map = foundry_tweak::build_tweak_data(&cloned_projects, &self.rpc).await?;
+            let tweak_map =
+                foundry_tweak::build_tweak_data(&cloned_projects, &self.rpc, self.quick).await?;
             tweak_backend(&mut executor.backend, &tweak_map)?;
         }
 

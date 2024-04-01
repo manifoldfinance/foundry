@@ -36,6 +36,7 @@ pub struct ReplayArgs {
     transaction: String,
 
     /// Executes the transaction only with the state from the previous block.
+    /// Note that this also include transactions that are used for tweaking code.
     ///
     /// May result in different results than the live execution!
     #[arg(long, short)]
@@ -93,7 +94,7 @@ impl ReplayArgs {
         let cloned_project = ClonedProject::load_with_root(&root)
             .map_err(|e| eyre!("failed to load the cloned project: {}", e))?;
         let tweaked_addr = cloned_project.metadata.address;
-        let tweaked_code = cloned_project.tweaked_code(&self.rpc).await?;
+        let tweaked_code = cloned_project.tweaked_code(&self.rpc, self.quick).await?;
 
         let figment = Config::figment_with_root(&root).merge(&self.rpc);
         let evm_opts = figment.extract::<EvmOpts>()?;
