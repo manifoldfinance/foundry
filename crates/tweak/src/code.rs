@@ -166,6 +166,7 @@ async fn tweak(
     env.tx.gas_limit = env.tx.gas_limit.checked_mul(2).ok_or(eyre!("gas limit overflow"))?;
     env.tx.gas_price =
         env.tx.gas_price.checked_div(U256::from(2)).ok_or(eyre!("divided by zero"))?;
+    env.tx.gas_priority_fee = Some(U256::ZERO);
     // we do not care about the execution result in this round
     db.inspect(&mut env, &mut inspector)?;
 
@@ -234,14 +235,10 @@ async fn prepare_backend(
     let BlockTransactions::Full(txs) = block.transactions else {
         return Err(eyre::eyre!("block transactions not found"));
     };
-    let mut txs_with_receipt = Vec::new();
-    for tx in txs {
-        let receipt = provider
-            .get_transaction_receipt(tx.hash)
-            .await?
-            .ok_or(eyre!("transaction receipt not found"))?;
-        txs_with_receipt.push((tx, receipt));
-    }
+    let Some(recipts) = provider.get_block_receipts(block_number.into()).await? else {
+        return Err(eyre::eyre!("block receipts not found"));
+    };
+    let txs_with_receipt = txs.into_iter().zip(recipts.into_iter()).collect();
 
     // get the figment from the cloned project's config
     let mut config = project.config.clone();
@@ -268,14 +265,15 @@ async fn prepare_backend(
         // create the executor and the corresponding env
         let executor = ExecutorBuilder::new().spec(spec_id).build(env.clone(), db);
 
-        if probe_evm_version(executor, &block_env, &txs_with_receipt, None).is_ok() {
-            break;
+        match probe_evm_version(executor, &block_env, &txs_with_receipt, None) {
+            Ok(_) => {
+                break;
+            }
+            Err(_) => {
+                spec_id = SpecId::try_from_u8((spec_id as u8) + 1)
+                    .ok_or(eyre!("failed to probe a proper EVM version"))?;
+            }
         }
-
-        spec_id = match SpecId::try_from_u8((spec_id as u8) + 1) {
-            Some(spec_id) => spec_id,
-            None => return Err(eyre!("failed to probe a proper EVM version")),
-        };
     }
 
     let db = Backend::spawn(evm_opts.get_fork(&config, env.clone()));
@@ -298,6 +296,11 @@ fn probe_evm_version(
 
     env.block = block_env.clone();
 
+    // XXX (ZZ): trick to avoid non-standard precompiled contract address on other chains, e.g.,
+    // BSC's 0x1000 address. In this case, we need to ensure all the following transactions are
+    // non-standard precompiled contract calls, which are not supported by the EVM executor.
+    let mut start_to_fail = None;
+
     for (tx, receipt) in txs {
         // skip system transactions
         if is_known_system_sender(tx.from) ||
@@ -305,13 +308,14 @@ fn probe_evm_version(
         {
             continue;
         }
+        println!("WTF working on tx hash: {:?}", tx.hash);
 
         // always configure the transaction environment
         configure_tx_env(&mut env, tx);
 
         // find the creation transaction
         if Some(tx.hash) == target_tx {
-            break;
+            return Ok((executor.backend, env));
         }
 
         // get the actual gas used
@@ -321,12 +325,24 @@ fn probe_evm_version(
             .to::<u64>();
 
         if tx.to.is_some() {
-            let rv = executor.commit_tx_with_env(env.clone()).wrap_err_with(|| {
-                format!(
-                    "Failed to execute transaction: {:?} in block {}",
-                    tx.hash, env.block.number
-                )
-            })?;
+            let rv = executor.commit_tx_with_env(env.clone());
+
+            if rv.is_err() {
+                if start_to_fail.is_none() {
+                    start_to_fail = Some(tx.hash);
+                }
+                continue;
+            }
+
+            // at this point, we know rv is Ok
+            eyre::ensure!(
+                start_to_fail.is_none(),
+                "valid transaction {:?} after a non-standard precompiled call {:?}",
+                tx.hash,
+                start_to_fail.unwrap()
+            );
+
+            let rv = rv.expect("This cannot fail");
 
             // check gas used
             eyre::ensure!(
@@ -352,16 +368,17 @@ fn probe_evm_version(
                         tx.hash
                     );
                 }
-                None => {}
-                _ => {
-                    return Err(eyre!(
-                        "Invalid status code: {:?} ({:?})",
-                        tx.hash,
-                        receipt.status_code
-                    ));
-                }
+                _ => {}
             }
         } else {
+            // we assume all the deployment transactions cannot be precompiled contract calls
+            eyre::ensure!(
+                start_to_fail.is_none(),
+                "deployment transaction {:?} after a non-standard precompiled call {:?}",
+                tx.hash,
+                start_to_fail.unwrap()
+            );
+
             match executor.deploy_with_env(env.clone(), None) {
                 // Reverted transactions should be skipped
                 Err(EvmError::Execution(error)) => {
@@ -387,6 +404,12 @@ fn probe_evm_version(
                 }
                 Ok(rv) => {
                     eyre::ensure!(
+                        start_to_fail.is_none(),
+                        "valid transaction {:?} after a potential call to a non-standard precompiled address {:?}",
+                        tx.hash,
+                        start_to_fail.unwrap()
+                    );
+                    eyre::ensure!(
                         rv.gas_used == real_gas_used,
                         "Gas used mismatch: expected {}, got {}",
                         real_gas_used,
@@ -402,7 +425,11 @@ fn probe_evm_version(
         }
     }
 
-    Ok((executor.backend, env))
+    if target_tx.is_none() {
+        Ok((executor.backend, env))
+    } else {
+        Err(eyre!("the target transaction is not found"))
+    }
 }
 
 #[cfg(test)]

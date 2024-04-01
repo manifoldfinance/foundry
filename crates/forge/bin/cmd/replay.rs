@@ -264,6 +264,11 @@ fn execute_tx(
     // in case users overrides gas price below EIP1559 base fee, we disable base fee for the
     // transaction
     env.cfg.disable_block_gas_limit = true;
+    // in case users overrides gas price below the original gas price, we reset the gas priority fee
+    if env.tx.gas_price.lt(&env.tx.gas_priority_fee.unwrap_or_default()) {
+        env.tx.gas_priority_fee = Some(U256::ZERO);
+    }
+    // disable base fee when necessary
     if env
         .tx
         .gas_price
