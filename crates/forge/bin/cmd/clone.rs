@@ -271,7 +271,8 @@ fn update_config_by_metadata(
     // apply remapping on libraries
     let path_config = config.project_paths();
     let libraries =
-        libraries.with_stripped_file_prefixes("contracts").with_applied_remappings(&path_config);
+        // libraries.with_stripped_file_prefixes("contracts").with_applied_remappings(&path_config);
+        libraries.with_applied_remappings(&path_config);
 
     // update libraries
     let mut lib_array = toml_edit::Array::new();
@@ -314,30 +315,30 @@ fn dump_sources(meta: &Metadata, root: &PathBuf) -> Result<Vec<RelativeRemapping
             std::fs::create_dir(&src_dir)?;
         }
         let entry = entry?;
-        let folder_name = entry.file_name().to_string_lossy().to_string();
+        // let folder_name = entry.file_name().to_string_lossy().to_string();
         // special handling for contracts and src directories: we flatten them.
-        if folder_name.as_str() == "contracts" || folder_name.as_str() == "src" {
-            // move all sub folders in contracts to src
-            for e in read_dir(entry.path())? {
-                let e = e?;
-                let dest = src_dir.join(e.file_name());
-                std::fs::rename(e.path(), &dest)?;
-                remappings.push(Remapping {
-                    context: None,
-                    name: format!("{}/{}", folder_name, e.file_name().to_string_lossy()),
-                    path: dest.to_string_lossy().to_string(),
-                });
-            }
-        } else {
-            // move the other folders to src
-            let dest = src_dir.join(entry.file_name());
-            std::fs::rename(entry.path(), &dest)?;
-            remappings.push(Remapping {
-                context: None,
-                name: entry.file_name().to_string_lossy().to_string(),
-                path: dest.to_string_lossy().to_string(),
-            });
-        }
+        // if folder_name.as_str() == "contracts" || folder_name.as_str() == "src" {
+        //     // move all sub folders in contracts to src
+        //     for e in read_dir(entry.path())? {
+        //         let e = e?;
+        //         let dest = src_dir.join(e.file_name());
+        //         std::fs::rename(e.path(), &dest)?;
+        //         remappings.push(Remapping {
+        //             context: None,
+        //             name: format!("{}/{}", folder_name, e.file_name().to_string_lossy()),
+        //             path: dest.to_string_lossy().to_string(),
+        //         });
+        //     }
+        // } else {
+        // move the other folders to src
+        let dest = src_dir.join(entry.file_name());
+        std::fs::rename(entry.path(), &dest)?;
+        remappings.push(Remapping {
+            context: None,
+            name: entry.file_name().to_string_lossy().to_string(),
+            path: dest.to_string_lossy().to_string(),
+        });
+        // }
     }
 
     // remove the temporary directory
