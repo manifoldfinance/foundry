@@ -8,7 +8,7 @@ use alloy_primitives::{Address, Bytes, TxHash, U256, U64};
 use alloy_providers::tmp::TempProvider;
 use alloy_rpc_types::{BlockId, BlockTransactions, Transaction, TransactionReceipt};
 use eyre::{eyre, Context, Result};
-use foundry_cli::opts::RpcOpts;
+use foundry_cli::{opts::RpcOpts, p_println};
 use foundry_common::{
     is_known_system_sender, provider::alloy::ProviderBuilder, SYSTEM_TRANSACTION_TYPE,
 };
@@ -51,9 +51,7 @@ impl TweakInspctor {
     pub fn prepare_for_pinpoint(&mut self) -> Result<()> {
         self.creation_count = 0;
 
-        if self.contract_address.is_none() {
-            return Err(eyre!("the contract address is not found"));
-        }
+        eyre::ensure!(self.contract_address.is_some(), "the contract address is not found");
 
         Ok(())
     }
@@ -61,13 +59,14 @@ impl TweakInspctor {
     pub fn prepare_for_tweak(&mut self) -> Result<()> {
         self.creation_count = 0;
 
-        if self.target_creation_count.is_none() {
-            return Err(eyre!("the target creation count is not found"));
-        }
-
-        if self.tweaked_creation_code.is_none() {
-            return Err(eyre!("the tweaked creation code is not found"));
-        }
+        eyre::ensure!(
+            self.target_creation_count.is_some(),
+            "the target creation count is not found"
+        );
+        eyre::ensure!(
+            self.tweaked_creation_code.is_some(),
+            "the tweaked creation code is not found"
+        );
 
         Ok(())
     }
@@ -128,6 +127,8 @@ pub async fn generate_tweaked_code(
     project: &ClonedProject,
     quick: bool,
 ) -> Result<Bytes> {
+    p_println!(!quick => "Tweaking the contract at {}...", project.metadata.address);
+    p_println!(!quick => "It may take time if the RPC has rate limits.");
     // prepare the deployment bytecode (w/ parameters)
     let artifact = project.main_artifact()?;
     let tweaked_creation_code = prepare_tweaked_creation_code(project, &artifact)?;
@@ -153,10 +154,12 @@ async fn tweak(
     // round 1: pinpoint the target creation count
     inspector.prepare_for_pinpoint()?;
     let rv = db.inspect(&mut env.clone(), &mut inspector)?;
-    if !rv.result.is_success() {
-        return Err(eyre!("failed to pinpoint the target creation count: {:?}", rv.result));
-    }
-    assert!(
+    eyre::ensure!(
+        rv.result.is_success(),
+        "failed to pinpoint the target creation count: {:?}",
+        rv.result
+    );
+    eyre::ensure!(
         inspector.creation_count == 0,
         "unexpected creation count: {}",
         inspector.creation_count
@@ -323,7 +326,6 @@ fn probe_evm_version(
         {
             continue;
         }
-        println!("WTF working on tx hash: {:?}", tx.hash);
 
         // always configure the transaction environment
         configure_tx_env(&mut env, tx);
