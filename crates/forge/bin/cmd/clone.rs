@@ -519,6 +519,7 @@ mod tests {
             address: "0x9ab6b21cdf116f611110b048987e58894786c244".to_string(),
             root: project_root.clone(),
             etherscan: Default::default(),
+            quiet: false,
             enable_git: false,
         };
         args.run().await.unwrap();
