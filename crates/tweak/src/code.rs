@@ -329,25 +329,28 @@ fn probe_evm_version(
             })?;
 
             // check gas used
-            if rv.gas_used != real_gas_used {
-                return Err(eyre!(
-                    "Gas used mismatch: expected {}, got {}",
-                    real_gas_used,
-                    rv.gas_used
-                ));
-            }
+            eyre::ensure!(
+                rv.gas_used == real_gas_used,
+                "Gas used mismatch: expected {}, got {}",
+                real_gas_used,
+                rv.gas_used
+            );
 
             // check transaction status
             match receipt.status_code {
                 Some(status) if status.to::<u64>() == 0 => {
-                    if rv.exit_reason.is_ok() {
-                        return Err(eyre!("Transaction should fail: {:?}", tx.hash));
-                    }
+                    eyre::ensure!(
+                        !rv.exit_reason.is_ok(),
+                        "Transaction should fail: {:?}",
+                        tx.hash
+                    );
                 }
                 Some(status) if status.to::<u64>() == 1 => {
-                    if !rv.exit_reason.is_ok() {
-                        return Err(eyre!("Transaction should succeed: {:?}", tx.hash));
-                    }
+                    eyre::ensure!(
+                        rv.exit_reason.is_ok(),
+                        "Transaction should succeed: {:?}",
+                        tx.hash
+                    );
                 }
                 None => {}
                 _ => {
@@ -362,16 +365,17 @@ fn probe_evm_version(
             match executor.deploy_with_env(env.clone(), None) {
                 // Reverted transactions should be skipped
                 Err(EvmError::Execution(error)) => {
-                    if error.gas_used != real_gas_used {
-                        return Err(eyre!(
-                            "Gas used mismatch: expected {}, got {}",
-                            real_gas_used,
-                            error.gas_used
-                        ));
-                    }
-                    if receipt.status_code == Some(U64::from(1)) {
-                        return Err(eyre!("Transaction should succeed: {:?}", tx.hash));
-                    }
+                    eyre::ensure!(
+                        error.gas_used == real_gas_used,
+                        "Gas used mismatch: expected {}, got {}",
+                        real_gas_used,
+                        error.gas_used
+                    );
+                    eyre::ensure!(
+                        receipt.status_code != Some(U64::from(1)),
+                        "Transaction should succeed: {:?}",
+                        tx.hash
+                    );
                 }
                 Err(error) => {
                     return Err(error).wrap_err_with(|| {
@@ -382,16 +386,17 @@ fn probe_evm_version(
                     })
                 }
                 Ok(rv) => {
-                    if rv.gas_used != real_gas_used {
-                        return Err(eyre!(
-                            "Gas used mismatch: expected {}, got {}",
-                            real_gas_used,
-                            rv.gas_used
-                        ));
-                    }
-                    if receipt.status_code == Some(U64::from(0)) {
-                        return Err(eyre!("Transaction should fail: {:?}", tx.hash));
-                    }
+                    eyre::ensure!(
+                        rv.gas_used == real_gas_used,
+                        "Gas used mismatch: expected {}, got {}",
+                        real_gas_used,
+                        rv.gas_used
+                    );
+                    eyre::ensure!(
+                        receipt.status_code != Some(U64::from(0)),
+                        "Transaction should fail: {:?}",
+                        tx.hash
+                    );
                 }
             }
         }
