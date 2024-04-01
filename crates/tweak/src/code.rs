@@ -4,9 +4,9 @@
 
 use std::borrow::Cow;
 
-use alloy_primitives::{Address, Bytes, U256};
+use alloy_primitives::{Address, Bytes, TxHash, U256, U64};
 use alloy_providers::tmp::TempProvider;
-use alloy_rpc_types::{BlockId, BlockTransactions};
+use alloy_rpc_types::{BlockId, BlockTransactions, Transaction, TransactionReceipt};
 use eyre::{eyre, Context, Result};
 use foundry_cli::opts::RpcOpts;
 use foundry_common::{
@@ -16,13 +16,13 @@ use foundry_compilers::{Artifact, ConfigurableContractArtifact};
 use foundry_config::{figment::Figment, Config, NamedChain};
 use foundry_evm::{
     backend::Backend,
-    executors::{EvmError, ExecutorBuilder},
+    executors::{EvmError, Executor, ExecutorBuilder},
     opts::EvmOpts,
     utils::configure_tx_env,
 };
 use revm::{
     interpreter::{CreateInputs, CreateOutcome},
-    primitives::EnvWithHandlerCfg,
+    primitives::{BlockEnv, EnvWithHandlerCfg, SpecId},
     EvmContext, Inspector,
 };
 
@@ -149,7 +149,7 @@ async fn tweak(
     inspector.prepare_for_pinpoint()?;
     let rv = db.inspect(&mut env.clone(), &mut inspector)?;
     if !rv.result.is_success() {
-        return Err(eyre!("failed to pinpoint the target creation count:\n {:#?}", rv.result));
+        return Err(eyre!("failed to pinpoint the target creation count: {:?}", rv.result));
     }
     assert!(
         inspector.creation_count == 0,
@@ -178,7 +178,7 @@ fn prepare_tweaked_creation_code(
 ) -> Result<Bytes> {
     let bytecode = artifact.get_bytecode().ok_or(eyre!("the contract does not have bytecode"))?;
     let deployment_bytecode =
-        bytecode.bytes().ok_or(eyre!("the contract does not have bytecode"))?;
+        bytecode.bytes().ok_or(eyre!("the bytecode transformation failed"))?;
     let constructor_arguments = &project.metadata.constructor_arguments;
 
     // concate the deployment bytecode with the constructor arguments
@@ -209,6 +209,40 @@ async fn prepare_backend(
     let block_number =
         tx_receipt.block_number.ok_or(eyre!("the transaction is not mined"))?.to::<u64>();
 
+    // then, we are going to replay all transactions before the creation transaction
+    let block = provider
+        .get_block(BlockId::Number(block_number.into()), true)
+        .await?
+        .ok_or(eyre!("block not found"))?;
+
+    // prepare the block env
+    let mut block_env = BlockEnv {
+        number: block.header.number.expect("block number is not found. Maybe it is not mined yet?"),
+        timestamp: block.header.timestamp,
+        coinbase: block.header.miner,
+        difficulty: block.header.difficulty,
+        prevrandao: Some(block.header.mix_hash.unwrap_or_default()),
+        basefee: block.header.base_fee_per_gas.unwrap_or_default(),
+        gas_limit: block.header.gas_limit,
+        blob_excess_gas_and_price: None,
+    };
+    if let Some(excess_blob_gas) = block.header.excess_blob_gas {
+        block_env.set_blob_excess_gas_and_price(excess_blob_gas.to::<u64>());
+    }
+
+    // get all transactions with receipts
+    let BlockTransactions::Full(txs) = block.transactions else {
+        return Err(eyre::eyre!("block transactions not found"));
+    };
+    let mut txs_with_receipt = Vec::new();
+    for tx in txs {
+        let receipt = provider
+            .get_transaction_receipt(tx.hash)
+            .await?
+            .ok_or(eyre!("transaction receipt not found"))?;
+        txs_with_receipt.push((tx, receipt));
+    }
+
     // get the figment from the cloned project's config
     let mut config = project.config.clone();
     config.fork_block_number = Some(block_number - 1);
@@ -226,36 +260,45 @@ async fn prepare_backend(
     // get env
     let env = evm_opts.evm_env().await?;
 
-    // get backend and create a fork
-    let db = Backend::spawn(evm_opts.get_fork(&config, env.clone()));
+    // a loop to probe the proper EVM version
+    let mut spec_id = config.evm_spec_id();
+    loop {
+        // get backend and executor
+        let db = Backend::spawn(evm_opts.get_fork(&config, env.clone()));
+        // create the executor and the corresponding env
+        let executor = ExecutorBuilder::new().spec(spec_id).build(env.clone(), db);
 
-    // create the executor and the corresponding env
-    let mut executor = ExecutorBuilder::new().spec(config.evm_spec_id()).build(env, db);
-    let mut env = executor.env.clone();
+        if probe_evm_version(executor, &block_env, &txs_with_receipt, None).is_ok() {
+            break;
+        }
 
-    // then, we are going to replay all transactions before the creation transaction
-    let block = provider
-        .get_block(BlockId::Number(block_number.into()), true)
-        .await?
-        .ok_or(eyre!("block not found"))?;
-    let BlockTransactions::Full(txs) = block.transactions else {
-        return Err(eyre::eyre!("block transactions not found"));
-    };
-
-    // update block env
-    env.block.number =
-        block.header.number.expect("block number is not found. Maybe it is not mined yet?");
-    env.block.timestamp = block.header.timestamp;
-    env.block.coinbase = block.header.miner;
-    env.block.difficulty = block.header.difficulty;
-    env.block.prevrandao = Some(block.header.mix_hash.unwrap_or_default());
-    env.block.basefee = block.header.base_fee_per_gas.unwrap_or_default();
-    env.block.gas_limit = block.header.gas_limit;
-    if let Some(excess_blob_gas) = block.header.excess_blob_gas {
-        env.block.set_blob_excess_gas_and_price(excess_blob_gas.to::<u64>());
+        spec_id = match SpecId::try_from_u8((spec_id as u8) + 1) {
+            Some(spec_id) => spec_id,
+            None => return Err(eyre!("failed to probe a proper EVM version")),
+        };
     }
 
-    for tx in txs {
+    let db = Backend::spawn(evm_opts.get_fork(&config, env.clone()));
+    let executor = ExecutorBuilder::new().spec(spec_id).build(env.clone(), db);
+    probe_evm_version(
+        executor,
+        &block_env,
+        &txs_with_receipt,
+        Some(project.metadata.creation_transaction),
+    )
+}
+
+fn probe_evm_version(
+    mut executor: Executor,
+    block_env: &BlockEnv,
+    txs: &Vec<(Transaction, TransactionReceipt)>,
+    target_tx: Option<TxHash>,
+) -> Result<(Backend, EnvWithHandlerCfg)> {
+    let mut env = executor.env.clone();
+
+    env.block = block_env.clone();
+
+    for (tx, receipt) in txs {
         // skip system transactions
         if is_known_system_sender(tx.from) ||
             tx.transaction_type.map(|ty| ty.to::<u64>()) == Some(SYSTEM_TRANSACTION_TYPE)
@@ -264,31 +307,91 @@ async fn prepare_backend(
         }
 
         // always configure the transaction environment
-        configure_tx_env(&mut env, &tx);
+        configure_tx_env(&mut env, tx);
 
         // find the creation transaction
-        if tx.hash == project.metadata.creation_transaction {
+        if Some(tx.hash) == target_tx {
             break;
         }
 
+        // get the actual gas used
+        let real_gas_used = receipt
+            .gas_used
+            .ok_or(eyre!("Failed to get atual gas used for transaction: {:?}", tx.hash))?
+            .to::<u64>();
+
         if tx.to.is_some() {
-            executor.commit_tx_with_env(env.clone()).wrap_err_with(|| {
+            let rv = executor.commit_tx_with_env(env.clone()).wrap_err_with(|| {
                 format!(
                     "Failed to execute transaction: {:?} in block {}",
                     tx.hash, env.block.number
                 )
             })?;
-        } else if let Err(error) = executor.deploy_with_env(env.clone(), None) {
-            match error {
+
+            // check gas used
+            if rv.gas_used != real_gas_used {
+                return Err(eyre!(
+                    "Gas used mismatch: expected {}, got {}",
+                    real_gas_used,
+                    rv.gas_used
+                ));
+            }
+
+            // check transaction status
+            match receipt.status_code {
+                Some(status) if status.to::<u64>() == 0 => {
+                    if rv.exit_reason.is_ok() {
+                        return Err(eyre!("Transaction should fail: {:?}", tx.hash));
+                    }
+                }
+                Some(status) if status.to::<u64>() == 1 => {
+                    if !rv.exit_reason.is_ok() {
+                        return Err(eyre!("Transaction should succeed: {:?}", tx.hash));
+                    }
+                }
+                None => {}
+                _ => {
+                    return Err(eyre!(
+                        "Invalid status code: {:?} ({:?})",
+                        tx.hash,
+                        receipt.status_code
+                    ));
+                }
+            }
+        } else {
+            match executor.deploy_with_env(env.clone(), None) {
                 // Reverted transactions should be skipped
-                EvmError::Execution(_) => (),
-                error => {
+                Err(EvmError::Execution(error)) => {
+                    if error.gas_used != real_gas_used {
+                        return Err(eyre!(
+                            "Gas used mismatch: expected {}, got {}",
+                            real_gas_used,
+                            error.gas_used
+                        ));
+                    }
+                    if receipt.status_code == Some(U64::from(1)) {
+                        return Err(eyre!("Transaction should succeed: {:?}", tx.hash));
+                    }
+                }
+                Err(error) => {
                     return Err(error).wrap_err_with(|| {
                         format!(
                             "Failed to deploy transaction: {:?} in block {}",
                             tx.hash, env.block.number
                         )
                     })
+                }
+                Ok(rv) => {
+                    if rv.gas_used != real_gas_used {
+                        return Err(eyre!(
+                            "Gas used mismatch: expected {}, got {}",
+                            real_gas_used,
+                            rv.gas_used
+                        ));
+                    }
+                    if receipt.status_code == Some(U64::from(0)) {
+                        return Err(eyre!("Transaction should fail: {:?}", tx.hash));
+                    }
                 }
             }
         }
