@@ -263,6 +263,7 @@ fn execute_tx(
     configure_tx_env(&mut env, tx);
     // in case users overrides gas price below EIP1559 base fee, we disable base fee for the
     // transaction
+    env.cfg.disable_block_gas_limit = true;
     if env
         .tx
         .gas_price
