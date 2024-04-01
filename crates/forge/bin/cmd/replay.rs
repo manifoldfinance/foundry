@@ -90,7 +90,8 @@ impl ReplayArgs {
     pub async fn run(mut self) -> Result<()> {
         self.rpc.url = self.rpc.url.or(Some("http://localhost:8545".to_string()));
         let root = find_project_root_path(None).unwrap();
-        let cloned_project = ClonedProject::load_with_root(&root)?;
+        let cloned_project = ClonedProject::load_with_root(&root)
+            .map_err(|e| eyre!("failed to load the cloned project: {}", e))?;
         let tweaked_addr = cloned_project.metadata.address;
         let tweaked_code = cloned_project.tweaked_code(&self.rpc).await?;
 
