@@ -4,7 +4,7 @@ use alloy_primitives::{Address, Bytes, ChainId, TxHash};
 use clap::{Parser, ValueHint};
 use eyre::Result;
 use foundry_block_explorers::{contract::Metadata, Client};
-use foundry_cli::{opts::EtherscanOpts, utils::Git};
+use foundry_cli::{opts::EtherscanOpts, p_println, utils::Git};
 use foundry_common::{compile::ProjectCompiler, fs};
 use foundry_compilers::{
     artifacts::{output_selection::ContractOutputSelection, Settings, StorageLayout},
@@ -28,6 +28,10 @@ pub struct CloneArgs {
     /// Enable git for the cloned project, default is false.
     #[arg(long)]
     pub enable_git: bool,
+
+    /// Do not print any messages.
+    #[arg(short, long)]
+    pub quiet: bool,
 
     #[command(flatten)]
     etherscan: EtherscanOpts,
@@ -58,7 +62,7 @@ pub struct CloneMetadata {
 
 impl CloneArgs {
     pub async fn run(self) -> Result<()> {
-        let CloneArgs { address, root, enable_git, etherscan } = self;
+        let CloneArgs { address, quiet, root, enable_git, etherscan } = self;
 
         // parse the contract address
         let contract_address: Address = address.parse()?;
@@ -76,6 +80,7 @@ impl CloneArgs {
         };
 
         // get the contract code
+        p_println!(!quiet => "Downloading the source code of {} from Etherscan...", contract_address);
         let client = Client::new(chain, etherscan_api_key)?;
         let mut meta = client.contract_source_code(contract_address).await?;
         if meta.items.len() != 1 {
@@ -87,7 +92,7 @@ impl CloneArgs {
         }
 
         // let's try to init the project with default init args
-        let opts = DependencyInstallOpts { no_git: !enable_git, ..Default::default() };
+        let opts = DependencyInstallOpts { no_git: !enable_git, quiet, ..Default::default() };
         let init_args = InitArgs { root: root.clone(), opts, ..Default::default() };
         init_args.run().map_err(|e| eyre::eyre!("Project init error: {:?}", e))?;
 
@@ -128,6 +133,7 @@ impl CloneArgs {
             main_artifact.storage_layout.to_owned().expect("storage layout not found");
 
         // dump the metadata to the root directory
+        p_println!(!quiet => "Collecting the creation information of {} from Etherscan...", contract_address);
         std::thread::sleep(etherscan_call_interval);
         let creation_tx = client.contract_creation_data(contract_address).await?;
         let clone_meta = CloneMetadata {
@@ -421,6 +427,7 @@ mod tests {
             address: "0x35Fb958109b70799a8f9Bc2a8b1Ee4cC62034193".to_string(),
             root: project_root.clone(),
             etherscan: Default::default(),
+            quiet: false,
             enable_git: false,
         };
         let (contract_name, stripped_creation_code) =
@@ -438,6 +445,7 @@ mod tests {
             address: "0x8B3D32cf2bb4d0D16656f4c0b04Fa546274f1545".to_string(),
             root: project_root.clone(),
             etherscan: Default::default(),
+            quiet: false,
             enable_git: false,
         };
         let (contract_name, stripped_creation_code) =
@@ -455,6 +463,7 @@ mod tests {
             address: "0xDb53f47aC61FE54F456A4eb3E09832D08Dd7BEec".to_string(),
             root: project_root.clone(),
             etherscan: Default::default(),
+            quiet: false,
             enable_git: false,
         };
         let (contract_name, stripped_creation_code) =
@@ -472,6 +481,7 @@ mod tests {
             address: "0x71356E37e0368Bd10bFDbF41dC052fE5FA24cD05".to_string(),
             root: project_root.clone(),
             etherscan: Default::default(),
+            quiet: false,
             enable_git: false,
         };
         let (contract_name, stripped_creation_code) =
@@ -489,6 +499,7 @@ mod tests {
             address: "0x3a23F943181408EAC424116Af7b7790c94Cb97a5".to_string(),
             root: project_root.clone(),
             etherscan: Default::default(),
+            quiet: false,
             enable_git: false,
         };
         args.run().await.unwrap();
