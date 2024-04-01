@@ -11,7 +11,7 @@ use foundry_compilers::{
     remappings::{RelativeRemapping, Remapping},
     ConfigurableContractArtifact, ProjectCompileOutput, ProjectPathsConfig,
 };
-use foundry_config::Config;
+use foundry_config::{Chain, Config};
 
 use super::{init::InitArgs, install::DependencyInstallOpts};
 
@@ -136,7 +136,7 @@ impl CloneArgs {
 
         // update configuration
         Config::update_at(&root, |config, doc| {
-            update_config_by_metadata(config, doc, &meta).is_ok()
+            update_config_by_metadata(config, doc, &meta, chain).is_ok()
         })?;
 
         // compile the cloned contract
@@ -203,6 +203,7 @@ fn update_config_by_metadata(
     config: &Config,
     doc: &mut toml_edit::Document,
     meta: &Metadata,
+    chain: Chain,
 ) -> Result<()> {
     let profile = config.profile.as_str().as_str();
 
@@ -224,6 +225,9 @@ fn update_config_by_metadata(
             }
         };
     }
+
+    // update the chain id
+    doc[Config::PROFILE_SECTION][profile]["chain_id"] = toml_edit::value(chain.id() as i64);
 
     // disable auto detect solc and set the solc version
     doc[Config::PROFILE_SECTION][profile]["auto_detect_solc"] = toml_edit::value(false);
