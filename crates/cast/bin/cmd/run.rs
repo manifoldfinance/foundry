@@ -191,12 +191,13 @@ impl RunArgs {
             println!("Executing previous transactions from the block.");
 
             if let Some(block) = block {
-                let pb = init_progress!(block.transactions, "tx");
-                pb.set_position(0);
-
                 let BlockTransactions::Full(txs) = block.transactions else {
                     return Err(eyre::eyre!("Could not get block txs"))
                 };
+
+                let txs = txs.into_iter().take_while(|tx| tx.hash != tx_hash).collect::<Vec<_>>();
+                let pb = init_progress!(txs, "tx");
+                pb.set_position(0);
 
                 for (index, tx) in txs.into_iter().enumerate() {
                     // System transactions such as on L2s don't contain any pricing info so
