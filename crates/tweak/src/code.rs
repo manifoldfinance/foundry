@@ -8,7 +8,7 @@ use alloy_primitives::{Address, Bytes, TxHash, U256, U64};
 use alloy_providers::tmp::TempProvider;
 use alloy_rpc_types::{BlockId, BlockTransactions, Transaction, TransactionReceipt};
 use eyre::{eyre, Context, Result};
-use foundry_cli::{opts::RpcOpts, p_println};
+use foundry_cli::{init_progress, opts::RpcOpts, p_println, update_progress};
 use foundry_common::{
     is_known_system_sender, provider::alloy::ProviderBuilder, SYSTEM_TRANSACTION_TYPE,
 };
@@ -26,7 +26,7 @@ use revm::{
     EvmContext, Inspector,
 };
 
-use crate::ClonedProject;
+use crate::{constant::NonStandardPrecompiled, ClonedProject};
 
 #[derive(Debug)]
 struct TweakInspctor {
@@ -127,7 +127,7 @@ pub async fn generate_tweaked_code(
     project: &ClonedProject,
     quick: bool,
 ) -> Result<Bytes> {
-    p_println!(!quick => "Tweaking the contract at {}...", project.metadata.address);
+    println!("Tweaking the contract at {}...", project.metadata.address);
     p_println!(!quick => "It may take time if the RPC has rate limits.");
     // prepare the deployment bytecode (w/ parameters)
     let artifact = project.main_artifact()?;
@@ -275,6 +275,7 @@ async fn prepare_backend(
 
     // a loop to probe the proper EVM version
     let mut spec_id = config.evm_spec_id();
+    let chain_id = NamedChain::try_from(project.metadata.chain_id)?;
     if !quick {
         loop {
             // get backend and executor
@@ -282,7 +283,7 @@ async fn prepare_backend(
             // create the executor and the corresponding env
             let executor = ExecutorBuilder::new().spec(spec_id).build(env.clone(), db);
 
-            match probe_evm_version(executor, &block_env, &txs_with_receipt, None) {
+            match probe_evm_version(chain_id, executor, &block_env, &txs_with_receipt, None) {
                 Ok(_) => {
                     break;
                 }
@@ -297,6 +298,7 @@ async fn prepare_backend(
     let db = Backend::spawn(evm_opts.get_fork(&config, env.clone()));
     let executor = ExecutorBuilder::new().spec(spec_id).build(env.clone(), db);
     probe_evm_version(
+        chain_id,
         executor,
         &block_env,
         &txs_with_receipt,
@@ -305,26 +307,36 @@ async fn prepare_backend(
 }
 
 fn probe_evm_version(
+    chain_id: NamedChain,
     mut executor: Executor,
     block_env: &BlockEnv,
-    txs: &Vec<(Transaction, TransactionReceipt)>,
+    txs: &[(Transaction, TransactionReceipt)],
     target_tx: Option<TxHash>,
 ) -> Result<(Backend, EnvWithHandlerCfg)> {
     let mut env = executor.env.clone();
 
     env.block = block_env.clone();
 
-    // XXX (ZZ): trick to avoid non-standard precompiled contract address on other chains, e.g.,
-    // BSC's 0x1000 address. In this case, we need to ensure all the following transactions are
-    // non-standard precompiled contract calls, which are not supported by the EVM executor.
-    let mut start_to_fail = None;
+    let non_standard_precompiled = NonStandardPrecompiled::get_precomiled_address(chain_id);
 
-    for (tx, receipt) in txs {
+    let pb = init_progress!(txs, format!("investigating {:?}", executor.spec_id()).as_str());
+    pb.set_position(0);
+
+    for (index, (tx, receipt)) in txs.iter().enumerate() {
+        update_progress!(pb, index);
+
         // skip system transactions
         if is_known_system_sender(tx.from) ||
             tx.transaction_type.map(|ty| ty.to::<u64>()) == Some(SYSTEM_TRANSACTION_TYPE)
         {
             continue;
+        }
+
+        // skip non-standard precompiled contracts
+        if let Some(precompiled) = non_standard_precompiled.as_ref() {
+            if precompiled.contains(&tx.to.unwrap_or_default()) {
+                continue;
+            }
         }
 
         // always configure the transaction environment
@@ -344,29 +356,15 @@ fn probe_evm_version(
         if tx.to.is_some() {
             let rv = executor.commit_tx_with_env(env.clone());
 
-            if rv.is_err() {
-                if start_to_fail.is_none() {
-                    start_to_fail = Some(tx.hash);
-                }
-                continue;
-            }
-
-            // at this point, we know rv is Ok
-            eyre::ensure!(
-                start_to_fail.is_none(),
-                "valid transaction {:?} after a non-standard precompiled call {:?}",
-                tx.hash,
-                start_to_fail.unwrap()
-            );
-
             let rv = rv.expect("This cannot fail");
 
             // check gas used
             eyre::ensure!(
                 rv.gas_used == real_gas_used,
-                "Gas used mismatch: expected {}, got {}",
+                "Gas used mismatch: expected {}, got {} ({:?})",
                 real_gas_used,
-                rv.gas_used
+                rv.gas_used,
+                tx.hash
             );
 
             // check transaction status
@@ -374,40 +372,33 @@ fn probe_evm_version(
                 Some(status) if status.to::<u64>() == 0 => {
                     eyre::ensure!(
                         !rv.exit_reason.is_ok(),
-                        "Transaction should fail: {:?}",
+                        "Transaction should fail ({:?})",
                         tx.hash
                     );
                 }
                 Some(status) if status.to::<u64>() == 1 => {
                     eyre::ensure!(
                         rv.exit_reason.is_ok(),
-                        "Transaction should succeed: {:?}",
+                        "Transaction should succeed ({:?})",
                         tx.hash
                     );
                 }
                 _ => {}
             }
         } else {
-            // we assume all the deployment transactions cannot be precompiled contract calls
-            eyre::ensure!(
-                start_to_fail.is_none(),
-                "deployment transaction {:?} after a non-standard precompiled call {:?}",
-                tx.hash,
-                start_to_fail.unwrap()
-            );
-
             match executor.deploy_with_env(env.clone(), None) {
                 // Reverted transactions should be skipped
                 Err(EvmError::Execution(error)) => {
                     eyre::ensure!(
                         error.gas_used == real_gas_used,
-                        "Gas used mismatch: expected {}, got {}",
+                        "Gas used mismatch: expected {}, got {} ({:?})",
                         real_gas_used,
-                        error.gas_used
+                        error.gas_used,
+                        tx.hash
                     );
                     eyre::ensure!(
                         receipt.status_code != Some(U64::from(1)),
-                        "Transaction should succeed: {:?}",
+                        "Transaction should succeed ({:?})",
                         tx.hash
                     );
                 }
@@ -421,20 +412,15 @@ fn probe_evm_version(
                 }
                 Ok(rv) => {
                     eyre::ensure!(
-                        start_to_fail.is_none(),
-                        "valid transaction {:?} after a potential call to a non-standard precompiled address {:?}",
-                        tx.hash,
-                        start_to_fail.unwrap()
-                    );
-                    eyre::ensure!(
                         rv.gas_used == real_gas_used,
-                        "Gas used mismatch: expected {}, got {}",
+                        "Gas used mismatch: expected {}, got {} ({:?})",
                         real_gas_used,
-                        rv.gas_used
+                        rv.gas_used,
+                        tx.hash
                     );
                     eyre::ensure!(
                         receipt.status_code != Some(U64::from(0)),
-                        "Transaction should fail: {:?}",
+                        "Transaction should fail ({:?})",
                         tx.hash
                     );
                 }

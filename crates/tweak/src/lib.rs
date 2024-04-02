@@ -1,5 +1,6 @@
 pub mod code;
 pub mod compatibility;
+mod constant;
 mod metadata;
 
 use std::collections::BTreeMap;

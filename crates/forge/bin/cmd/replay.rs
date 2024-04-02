@@ -11,7 +11,9 @@ use forge::{
     utils::configure_tx_env,
 };
 use foundry_cli::{
+    init_progress,
     opts::RpcOpts,
+    update_progress,
     utils::{handle_traces, TraceResult},
 };
 use foundry_common::{is_known_system_sender, SYSTEM_TRANSACTION_TYPE};
@@ -188,7 +190,11 @@ impl ReplayArgs {
         };
         if !quick {
             trace!("Executing transactions before the target transaction in the same block...");
-            for tx in txs {
+            let pb = init_progress!(txs, "replaying txs");
+            pb.set_position(0);
+            for (index, tx) in txs.into_iter().enumerate() {
+                update_progress!(pb, index);
+
                 // System transactions such as on L2s don't contain any pricing info so
                 // we skip them otherwise this would cause
                 // reverts
