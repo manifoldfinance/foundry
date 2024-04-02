@@ -11,7 +11,7 @@ use alloy_primitives::{Address, Bytes, U64};
 use alloy_rpc_types::request::TransactionRequest;
 use async_recursion::async_recursion;
 use ethers_providers::Middleware;
-use eyre::{Context, Result};
+use eyre::{eyre, Context, Result};
 use foundry_cheatcodes::ScriptWallets;
 use foundry_cli::{
     opts::RpcOpts,
@@ -82,7 +82,8 @@ impl LinkedState {
                 .tweak
                 .iter()
                 .map(|path| {
-                    let path = path.canonicalize()?;
+                    let path = dunce::canonicalize(path)
+                        .map_err(|e| eyre!("Failed to load tweak project: {:?}", e))?;
                     foundry_tweak::ClonedProject::load_with_root(&path).wrap_err_with(|| {
                         format!("Failed to load tweak project from path: {:?}", &path)
                     })

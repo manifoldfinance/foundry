@@ -169,8 +169,7 @@ impl RunArgs {
             // If user specified tweak projects, we need to tweak the code of the contracts
             let mut cloned_projects: Vec<foundry_tweak::ClonedProject> = vec![];
             for path in self.tweak.iter() {
-                let path = path
-                    .canonicalize()
+                let path = dunce::canonicalize(path)
                     .map_err(|e| eyre::eyre!("failed to load tweak project: {:?}", e))?;
                 let project =
                     foundry_tweak::ClonedProject::load_with_root(&path).wrap_err_with(|| {

@@ -92,10 +92,8 @@ impl ReplayArgs {
     /// Logic is akin to the `cast run` command.
     pub async fn run(mut self) -> Result<()> {
         self.rpc.url = self.rpc.url.or(Some("http://localhost:8545".to_string()));
-        let root = find_project_root_path(None)
-            .unwrap()
-            .canonicalize()
-            .expect("failed to convert to absolute path");
+        let root = find_project_root_path(None).unwrap();
+        let root = dunce::canonicalize(root).expect("failed to convert to absolute path");
         let cloned_project = ClonedProject::load_with_root(&root)
             .map_err(|e| eyre!("failed to load the cloned project: {}", e))?;
         let tweaked_addr = cloned_project.metadata.address;

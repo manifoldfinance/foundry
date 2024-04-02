@@ -66,9 +66,10 @@ impl ClonedProject {
     /// The root should be an absolute path.
     pub fn load_with_root(root: impl Into<PathBuf>) -> Result<ClonedProject> {
         let root = root.into();
+        assert!(root.is_absolute());
         let cwd = std::env::current_dir()?;
         std::env::set_current_dir(&root)?;
-        let config = Config::load();
+        let config = Config::load_with_root(&root);
         std::env::set_current_dir(cwd)?;
         let metadata = CloneMetadata::load_with_root(&root)?;
         Ok(ClonedProject {
@@ -90,15 +91,16 @@ impl ClonedProject {
         }
 
         // load the foundry config
-        // XXX (ZZ): some insufficient implementation of Config::load_with_root
-        // prevents us from invoking this function directly
+        // XXX (ZZ): some insufficient implementation of Config::project_paths(). It depends on the
+        // current working directory, preventiong us from invoking this function directly
         let cwd = std::env::current_dir()?;
         std::env::set_current_dir(&self.root)?;
 
         // compile the project to get the current artifacts
         let mut config = self.config.clone();
+        let project = config.project()?;
         config.extra_output.push(ContractOutputSelection::StorageLayout);
-        let output = ProjectCompiler::new().compile(&config.project()?)?;
+        let output = ProjectCompiler::new().compile(&project)?;
 
         std::env::set_current_dir(cwd)?;
 

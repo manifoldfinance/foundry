@@ -365,7 +365,7 @@ fn dump_sources(meta: &Metadata, root: &PathBuf) -> Result<Vec<RelativeRemapping
 /// Compile the project in the root directory, and return the compilation result.
 pub fn compile_project(root: &PathBuf) -> Result<ProjectCompileOutput> {
     std::env::set_current_dir(root)?;
-    let mut config = Config::load();
+    let mut config = Config::load_with_root(root);
     config.extra_output.push(ContractOutputSelection::StorageLayout);
     let project = config.project()?;
     let compiler = ProjectCompiler::new();
