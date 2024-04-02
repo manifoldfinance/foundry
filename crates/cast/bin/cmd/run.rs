@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use alloy_primitives::U256;
 use alloy_providers::tmp::TempProvider;
 use alloy_rpc_types::BlockTransactions;
-use cast::revm::primitives::EnvWithHandlerCfg;
+use cast::{decode::decode_console_logs, revm::primitives::EnvWithHandlerCfg};
 use clap::Parser;
 use eyre::{Result, WrapErr};
 use foundry_cli::{
@@ -247,22 +247,42 @@ impl RunArgs {
         }
 
         // Execute our transaction
-        let result = {
+        let (result, console_logs) = {
             configure_tx_env(&mut env, &tx);
 
             if let Some(to) = tx.to {
                 trace!(tx=?tx.hash, to=?to, "executing call transaction");
-                TraceResult::from(executor.commit_tx_with_env(env)?)
+                let result = executor.commit_tx_with_env(env)?;
+                let logs = decode_console_logs(&result.logs);
+                (TraceResult::from(result), logs)
             } else {
                 trace!(tx=?tx.hash, "executing create transaction");
                 match executor.deploy_with_env(env, None) {
-                    Ok(res) => TraceResult::from(res),
-                    Err(err) => TraceResult::try_from(err)?,
+                    Ok(res) => {
+                        let logs = decode_console_logs(&res.logs);
+                        (TraceResult::from(res), logs)
+                    }
+                    Err(err) => {
+                        let logs = match &err {
+                            EvmError::Execution(e) => decode_console_logs(&e.logs),
+                            _ => vec![],
+                        };
+                        (TraceResult::try_from(err)?, logs)
+                    }
                 }
             }
         };
 
         handle_traces(result, &config, chain, self.label, self.debug).await?;
+
+        // print logs if any
+        if !console_logs.is_empty() {
+            println!("Logs:");
+            for log in console_logs {
+                println!("  {log}");
+            }
+            println!();
+        }
 
         Ok(())
     }
