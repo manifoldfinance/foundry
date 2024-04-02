@@ -10,7 +10,7 @@ use alloy_rpc_types::{BlockId, BlockTransactions, Transaction, TransactionReceip
 use eyre::{eyre, Context, Result};
 use foundry_cli::{init_progress, opts::RpcOpts, p_println, update_progress};
 use foundry_common::{
-    is_known_system_sender, provider::alloy::ProviderBuilder, SYSTEM_TRANSACTION_TYPE,
+    cli_warn, is_known_system_sender, provider::alloy::ProviderBuilder, SYSTEM_TRANSACTION_TYPE,
 };
 use foundry_compilers::{Artifact, ConfigurableContractArtifact};
 use foundry_config::{figment::Figment, Config, NamedChain};
@@ -336,6 +336,12 @@ async fn prepare_backend(
     // a loop to probe the proper EVM version
     let mut spec_id = config.evm_spec_id();
     let chain_id = NamedChain::try_from(project.metadata.chain_id)?;
+
+    if chain_id == NamedChain::BinanceSmartChain || chain_id == NamedChain::BinanceSmartChainTestnet
+    {
+        cli_warn!("Tweaking contracts on BinanceSmartChain (BSC) may not work due to its non-standard gas consumption. Please see more at https://github.com/foundry-rs/foundry/issues/4784#issuecomment-1520402694");
+    }
+
     if !quick {
         loop {
             // get backend and executor
@@ -349,7 +355,7 @@ async fn prepare_backend(
                 }
                 Err(_) => {
                     spec_id = SpecId::try_from_u8((spec_id as u8) + 1)
-                        .ok_or(eyre!("failed to probe a proper EVM version"))?;
+                        .ok_or(eyre!("failed to probe a proper EVM version. You may want to use --quick option to skip EVM version probing."))?;
                 }
             }
         }
@@ -416,7 +422,7 @@ fn probe_evm_version(
         if tx.to.is_some() {
             let rv = executor.commit_tx_with_env(env.clone());
 
-            let rv = rv.expect("This cannot fail");
+            let rv = rv.wrap_err("Executing transaction fails")?;
 
             // check gas used
             eyre::ensure!(
