@@ -21,8 +21,8 @@ use foundry_evm::{
     utils::configure_tx_env,
 };
 use revm::{
-    interpreter::{CreateInputs, CreateOutcome},
-    primitives::{BlockEnv, EnvWithHandlerCfg, SpecId},
+    interpreter::{CreateInputs, CreateOutcome, Interpreter, OpCode},
+    primitives::{BlockEnv, EnvWithHandlerCfg, HashSet, SpecId},
     EvmContext, Inspector,
 };
 
@@ -36,6 +36,10 @@ struct TweakInspctor {
     target_creation_tag: Option<(u64, u64)>,
     tweaked_creation_code: Option<Bytes>,
     tweaked_code: Option<Bytes>,
+
+    // used to modify address(this)
+    to_upadte_address: bool,
+    observed_created_addresses: HashSet<Address>,
 }
 
 impl TweakInspctor {
@@ -47,12 +51,18 @@ impl TweakInspctor {
             target_creation_tag: None,
             tweaked_creation_code,
             tweaked_code: None,
+
+            to_upadte_address: false,
+            observed_created_addresses: HashSet::new(),
         }
     }
 
     pub fn prepare_for_pinpoint(&mut self) -> Result<()> {
         self.creation_count = 0;
         self.creation_stack_depth = 0;
+
+        self.to_upadte_address = false;
+        self.observed_created_addresses.clear();
 
         eyre::ensure!(self.contract_address.is_some(), "the contract address is not found");
 
@@ -63,6 +73,10 @@ impl TweakInspctor {
         self.creation_count = 0;
         self.creation_stack_depth = 0;
 
+        self.to_upadte_address = false;
+        self.observed_created_addresses.clear();
+
+        eyre::ensure!(self.contract_address.is_some(), "the contract address is not found");
         eyre::ensure!(self.target_creation_tag.is_some(), "the target creation count is not found");
         eyre::ensure!(
             self.tweaked_creation_code.is_some(),
@@ -125,6 +139,29 @@ impl Inspector<&mut Backend> for TweakInspctor {
         self.creation_stack_depth -= 1;
         outcome
     }
+
+    #[inline]
+    fn step(&mut self, interp: &mut Interpreter, _: &mut EvmContext<&mut Backend>) {
+        if Some((self.creation_count, self.creation_stack_depth)) == self.target_creation_tag {
+            self.to_upadte_address = interp.current_opcode() == OpCode::ADDRESS.get();
+        }
+    }
+
+    #[inline]
+    fn step_end(&mut self, interp: &mut Interpreter, _: &mut EvmContext<&mut Backend>) {
+        if Some((self.creation_count, self.creation_stack_depth)) == self.target_creation_tag &&
+            self.to_upadte_address
+        {
+            // we hook into the ADDRESS opcode to update the address
+            // note that we only update the address for the target contract
+            if let Some(original_address) = self.contract_address {
+                let stack = &mut interp.stack;
+                self.observed_created_addresses
+                    .insert(Address::from_word(stack.pop().unwrap().into()));
+                stack.push(original_address.into_word().into()).unwrap();
+            }
+        }
+    }
 }
 
 pub async fn generate_tweaked_code(
@@ -182,6 +219,10 @@ async fn tweak(
     env.tx.gas_priority_fee = Some(U256::ZERO);
     // we do not care about the execution result in this round
     db.inspect(&mut env, &mut inspector)?;
+    eyre::ensure!(
+        inspector.observed_created_addresses.len() == 1,
+        "hooked ADDRESS opcodes return different addresses"
+    );
 
     inspector.tweaked_code.ok_or(eyre!("the tweaked code is not generated"))
 }
