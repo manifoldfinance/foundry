@@ -31,8 +31,9 @@ use crate::{constant::NonStandardPrecompiled, ClonedProject};
 #[derive(Debug)]
 struct TweakInspctor {
     creation_count: u64,
+    creation_stack_depth: u64,
     contract_address: Option<Address>,
-    target_creation_count: Option<u64>,
+    target_creation_tag: Option<(u64, u64)>,
     tweaked_creation_code: Option<Bytes>,
     tweaked_code: Option<Bytes>,
 }
@@ -41,8 +42,9 @@ impl TweakInspctor {
     pub fn new(contract_address: Option<Address>, tweaked_creation_code: Option<Bytes>) -> Self {
         Self {
             creation_count: 0,
+            creation_stack_depth: 0,
             contract_address,
-            target_creation_count: None,
+            target_creation_tag: None,
             tweaked_creation_code,
             tweaked_code: None,
         }
@@ -50,6 +52,7 @@ impl TweakInspctor {
 
     pub fn prepare_for_pinpoint(&mut self) -> Result<()> {
         self.creation_count = 0;
+        self.creation_stack_depth = 0;
 
         eyre::ensure!(self.contract_address.is_some(), "the contract address is not found");
 
@@ -58,11 +61,9 @@ impl TweakInspctor {
 
     pub fn prepare_for_tweak(&mut self) -> Result<()> {
         self.creation_count = 0;
+        self.creation_stack_depth = 0;
 
-        eyre::ensure!(
-            self.target_creation_count.is_some(),
-            "the target creation count is not found"
-        );
+        eyre::ensure!(self.target_creation_tag.is_some(), "the target creation count is not found");
         eyre::ensure!(
             self.tweaked_creation_code.is_some(),
             "the tweaked creation code is not found"
@@ -79,11 +80,12 @@ impl Inspector<&mut Backend> for TweakInspctor {
         _: &mut EvmContext<&mut Backend>,
         inputs: &mut CreateInputs,
     ) -> Option<CreateOutcome> {
-        // first update the creation_count
+        // first update the creation_count and creation_stack_depth
         self.creation_count += 1;
+        self.creation_stack_depth += 1;
 
         // we then check creation count as the target one
-        if Some(self.creation_count) == self.target_creation_count {
+        if Some((self.creation_count, self.creation_stack_depth)) == self.target_creation_tag {
             // we are going to tweak the creation code
             if let Some(tweaked_creation_code) = &self.tweaked_creation_code {
                 inputs.init_code = tweaked_creation_code.clone();
@@ -101,9 +103,11 @@ impl Inspector<&mut Backend> for TweakInspctor {
         outcome: CreateOutcome,
     ) -> CreateOutcome {
         // we shall first distinguish the replay stage
-        if let Some(target_count) = self.target_creation_count {
+        if let Some((target_count, target_stack_depth)) = self.target_creation_tag {
             // record the tweaked contract address
-            if self.creation_count == target_count {
+            if self.creation_count == target_count &&
+                self.creation_stack_depth == target_stack_depth
+            {
                 if let Some(address) = outcome.address {
                     if let Ok((code, _)) = context.code(address) {
                         self.tweaked_code = Some(code.bytes().clone());
@@ -113,11 +117,12 @@ impl Inspector<&mut Backend> for TweakInspctor {
         } else {
             // we are here to find the target creation count
             if outcome.address == self.contract_address {
-                self.target_creation_count = Some(self.creation_count);
+                self.target_creation_tag = Some((self.creation_count, self.creation_stack_depth));
             }
         }
 
-        self.creation_count -= 1;
+        // we only decresae the creation_stack_depth
+        self.creation_stack_depth -= 1;
         outcome
     }
 }
@@ -156,13 +161,13 @@ async fn tweak(
     let rv = db.inspect(&mut env.clone(), &mut inspector)?;
     eyre::ensure!(
         rv.result.is_success(),
-        "failed to pinpoint the target creation count: {:?}",
+        "failed to pinpoint the target creation: {:?}",
         rv.result
     );
     eyre::ensure!(
-        inspector.creation_count == 0,
+        inspector.creation_stack_depth == 0,
         "unexpected creation count: {}",
-        inspector.creation_count
+        inspector.creation_stack_depth
     );
 
     // round 2: tweak the creation code
