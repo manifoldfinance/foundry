@@ -63,6 +63,7 @@ impl ClonedProject {
 
     /// Load the cloned project from the root directory of the project.
     /// If the clone metadata file does not exist, an error is returned.
+    /// The root should be an absolute path.
     pub fn load_with_root(root: impl Into<PathBuf>) -> Result<ClonedProject> {
         let root = root.into();
         let cwd = std::env::current_dir()?;

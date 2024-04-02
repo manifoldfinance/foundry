@@ -82,8 +82,9 @@ impl LinkedState {
                 .tweak
                 .iter()
                 .map(|path| {
-                    foundry_tweak::ClonedProject::load_with_root(path).wrap_err_with(|| {
-                        format!("Failed to load tweak project from path: {:?}", path)
+                    let path = path.canonicalize()?;
+                    foundry_tweak::ClonedProject::load_with_root(&path).wrap_err_with(|| {
+                        format!("Failed to load tweak project from path: {:?}", &path)
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
