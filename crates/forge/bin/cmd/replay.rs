@@ -191,7 +191,8 @@ impl ReplayArgs {
         };
         if !quick {
             trace!("Executing transactions before the target transaction in the same block...");
-            let pb = init_progress!(txs, "replaying txs");
+            let txs = txs.into_iter().take_while(|tx| tx.hash != tx_hash).collect::<Vec<_>>();
+            let pb = init_progress!(txs, "replaying preceeding txs");
             pb.set_position(0);
             for (index, tx) in txs.into_iter().enumerate() {
                 update_progress!(pb, index);
