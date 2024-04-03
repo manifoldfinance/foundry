@@ -12,6 +12,9 @@ Tweaking on-chain contracts are especially useful when:
 - investigating the logic of a complex contract (e.g., UniswapV3) on chain;
 - debug the interaction with on-chain contracts which produce unexpected revert errors.
 
+Here's the demo!
+[![asciicast](https://asciinema.org/a/650466.svg)](https://asciinema.org/a/650466)
+
 ## Installation
 
 This project is a fork of foundry.
@@ -63,3 +66,7 @@ The **Tweak** feature is still under active development as part of the __EtherDe
 
 The functionality is not stable yet and may suffer from breaking change in the future.
 Any contribution (bug reports, PRs, documentation, etc.) is welcome and greatly appreciated.
+
+## Acknowledgement
+
+Contributed by @Troublor and @ZhangZhuoSJTU with passion.
