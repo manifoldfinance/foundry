@@ -1,7 +1,10 @@
 //! Test outcomes.
 
 use alloy_primitives::{Address, Log};
-use foundry_common::{evm::Breakpoints, get_contract_name, get_file_name, shell};
+use foundry_common::{
+    evm::Breakpoints, get_contract_name, get_file_name, shell, ContractsByArtifact,
+};
+use foundry_compilers::artifacts::Libraries;
 use foundry_evm::{
     coverage::HitMaps,
     debug::DebugArena,
@@ -13,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap},
     fmt::{self, Write},
+    sync::Arc,
     time::Duration,
 };
 use yansi::Paint;
@@ -33,7 +37,7 @@ pub struct TestOutcome {
     /// This is `None` if traces and logs were not decoded.
     ///
     /// Note that `Address` fields only contain the last executed test case's data.
-    pub decoder: Option<CallTraceDecoder>,
+    pub last_run_decoder: Option<CallTraceDecoder>,
     /// The gas report, if requested.
     pub gas_report: Option<GasReport>,
 }
@@ -41,7 +45,7 @@ pub struct TestOutcome {
 impl TestOutcome {
     /// Creates a new test outcome with the given results.
     pub fn new(results: BTreeMap<String, SuiteResult>, allow_failure: bool) -> Self {
-        Self { results, allow_failure, decoder: None, gas_report: None }
+        Self { results, allow_failure, last_run_decoder: None, gas_report: None }
     }
 
     /// Creates a new empty test outcome.
@@ -188,11 +192,17 @@ impl TestOutcome {
 #[derive(Clone, Debug, Serialize)]
 pub struct SuiteResult {
     /// Wall clock time it took to execute all tests in this suite.
+    #[serde(with = "humantime_serde")]
     pub duration: Duration,
     /// Individual test results: `test fn signature -> TestResult`.
     pub test_results: BTreeMap<String, TestResult>,
     /// Generated warnings.
     pub warnings: Vec<String>,
+    /// Libraries used to link test contract.
+    pub libraries: Libraries,
+    /// Contracts linked with correct libraries.
+    #[serde(skip)]
+    pub known_contracts: Arc<ContractsByArtifact>,
 }
 
 impl SuiteResult {
@@ -200,8 +210,10 @@ impl SuiteResult {
         duration: Duration,
         test_results: BTreeMap<String, TestResult>,
         warnings: Vec<String>,
+        libraries: Libraries,
+        known_contracts: Arc<ContractsByArtifact>,
     ) -> Self {
-        Self { duration, test_results, warnings }
+        Self { duration, test_results, warnings, libraries, known_contracts }
     }
 
     /// Returns an iterator over all individual succeeding tests and their names.

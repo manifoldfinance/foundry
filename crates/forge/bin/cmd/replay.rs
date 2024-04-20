@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use alloy_primitives::{Address, Bytes, TxHash, U128, U256};
-use alloy_providers::tmp::TempProvider;
+use alloy_provider::Provider;
 use alloy_rpc_types::{Block, BlockTransactions, Transaction};
 use eyre::{eyre, Context, Result};
 use forge::{
@@ -157,11 +157,11 @@ impl ReplayArgs {
         // get transactiond data
         let mut tx = provider.get_transaction_by_hash(tx_hash).await.unwrap();
         let tx_block_number: u64 =
-            tx.block_number.ok_or(eyre!("transaction may still be pending"))?.to();
+            tx.block_number.ok_or(eyre!("transaction may still be pending"))?;
         // If the gas is not specified, we use 2 times of the gas limit from the transaction
-        tx.gas = gas.map(U256::from).unwrap_or(tx.gas.saturating_add(tx.gas));
+        tx.gas = gas.map(|x| x as u128).unwrap_or(tx.gas.saturating_add(tx.gas));
         // Set the gas price if specified
-        tx.gas_price = gas_price.or(tx.gas_price);
+        tx.gas_price = gas_price.map(|x| x.to()).or(tx.gas_price);
 
         // get preceeding transactions in the same block
         let block = provider.get_block(tx_block_number.into(), true).await.unwrap();
@@ -201,7 +201,7 @@ impl ReplayArgs {
                 // we skip them otherwise this would cause
                 // reverts
                 if is_known_system_sender(tx.from) ||
-                    tx.transaction_type.map(|ty| ty.to::<u64>()) == Some(SYSTEM_TRANSACTION_TYPE)
+                    tx.transaction_type == Some(SYSTEM_TRANSACTION_TYPE)
                 {
                     continue;
                 }
@@ -225,14 +225,14 @@ impl ReplayArgs {
 }
 
 fn adjust_block_env(env: &mut EnvWithHandlerCfg, block: &Block) {
-    env.block.timestamp = block.header.timestamp;
+    env.block.timestamp = U256::from(block.header.timestamp);
     env.block.coinbase = block.header.miner;
     env.block.difficulty = block.header.difficulty;
     env.block.prevrandao = Some(block.header.mix_hash.unwrap_or_default());
-    env.block.basefee = block.header.base_fee_per_gas.unwrap_or_default();
-    env.block.gas_limit = block.header.gas_limit;
+    env.block.basefee = U256::from(block.header.base_fee_per_gas.unwrap_or_default());
+    env.block.gas_limit = U256::from(block.header.gas_limit);
     if let Some(excess_blob_gas) = block.header.excess_blob_gas {
-        env.block.set_blob_excess_gas_and_price(excess_blob_gas.to::<u64>());
+        env.block.set_blob_excess_gas_and_price(excess_blob_gas as u64);
     }
 }
 

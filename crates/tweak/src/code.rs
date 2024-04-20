@@ -2,11 +2,12 @@
 //! The contract should from a cloned project created by `forge clone` command.
 //! The generation has to happen after the compatibility check.
 
-use std::borrow::Cow;
-
-use alloy_primitives::{Address, Bytes, TxHash, U256, U64};
-use alloy_providers::tmp::TempProvider;
-use alloy_rpc_types::{BlockId, BlockTransactions, Transaction, TransactionReceipt};
+use alloy_primitives::{Address, Bytes, TxHash, U256};
+use alloy_provider::Provider;
+use alloy_rpc_types::{
+    AnyReceiptEnvelope, BlockId, BlockTransactions, Log, Transaction, TransactionReceipt,
+    WithOtherFields,
+};
 use eyre::{eyre, Context, Result};
 use foundry_cli::{init_progress, opts::RpcOpts, p_println, update_progress};
 use foundry_common::{
@@ -19,12 +20,14 @@ use foundry_evm::{
     executors::{EvmError, Executor, ExecutorBuilder},
     opts::EvmOpts,
     utils::configure_tx_env,
+    InspectorExt,
 };
 use revm::{
     interpreter::{CreateInputs, CreateOutcome, Interpreter, OpCode},
     primitives::{BlockEnv, EnvWithHandlerCfg, HashSet, SpecId},
     EvmContext, Inspector,
 };
+use std::borrow::Cow;
 
 use crate::{constant::NonStandardPrecompiled, ClonedProject};
 
@@ -42,6 +45,9 @@ struct TweakInspctor {
     created_address_in_tweak: Option<Address>,
     observed_created_addresses: HashSet<Address>,
 }
+
+type TransactionExt = WithOtherFields<Transaction>;
+type TransactionReceiptExt = WithOtherFields<TransactionReceipt<AnyReceiptEnvelope<Log>>>;
 
 impl TweakInspctor {
     pub fn new(contract_address: Option<Address>, tweaked_creation_code: Option<Bytes>) -> Self {
@@ -90,6 +96,8 @@ impl TweakInspctor {
         Ok(())
     }
 }
+
+impl InspectorExt<&mut Backend> for TweakInspctor {}
 
 impl Inspector<&mut Backend> for TweakInspctor {
     #[inline]
@@ -276,8 +284,7 @@ async fn prepare_backend(
         .get_transaction_receipt(project.metadata.creation_transaction)
         .await?
         .ok_or(eyre!("the transaction is not mined"))?;
-    let block_number =
-        tx_receipt.block_number.ok_or(eyre!("the transaction is not mined"))?.to::<u64>();
+    let block_number = tx_receipt.block_number.ok_or(eyre!("the transaction is not mined"))?;
 
     // then, we are going to replay all transactions before the creation transaction
     let block = provider
@@ -287,17 +294,19 @@ async fn prepare_backend(
 
     // prepare the block env
     let mut block_env = BlockEnv {
-        number: block.header.number.expect("block number is not found. Maybe it is not mined yet?"),
-        timestamp: block.header.timestamp,
+        number: U256::from(
+            block.header.number.expect("block number is not found. Maybe it is not mined yet?"),
+        ),
+        timestamp: U256::from(block.header.timestamp),
         coinbase: block.header.miner,
         difficulty: block.header.difficulty,
         prevrandao: Some(block.header.mix_hash.unwrap_or_default()),
-        basefee: block.header.base_fee_per_gas.unwrap_or_default(),
-        gas_limit: block.header.gas_limit,
+        basefee: U256::from(block.header.base_fee_per_gas.unwrap_or_default()),
+        gas_limit: U256::from(block.header.gas_limit),
         blob_excess_gas_and_price: None,
     };
     if let Some(excess_blob_gas) = block.header.excess_blob_gas {
-        block_env.set_blob_excess_gas_and_price(excess_blob_gas.to::<u64>());
+        block_env.set_blob_excess_gas_and_price(excess_blob_gas as u64);
     }
 
     // get all transactions with receipts
@@ -308,7 +317,10 @@ async fn prepare_backend(
         let Some(recipts) = provider.get_block_receipts(block_number.into()).await? else {
             return Err(eyre::eyre!("block receipts not found"));
         };
-        txs.into_iter().zip(recipts.into_iter()).collect()
+        txs.into_iter()
+            .zip(recipts.into_iter())
+            .map(|(a, b)| (WithOtherFields::new(a), b))
+            .collect()
     } else {
         vec![(
             provider.get_transaction_by_hash(project.metadata.creation_transaction).await?,
@@ -376,7 +388,7 @@ fn probe_evm_version(
     chain_id: NamedChain,
     mut executor: Executor,
     block_env: &BlockEnv,
-    txs: &[(Transaction, TransactionReceipt)],
+    txs: &[(TransactionExt, TransactionReceiptExt)],
     target_tx: Option<TxHash>,
 ) -> Result<(Backend, EnvWithHandlerCfg)> {
     let mut env = executor.env.clone();
@@ -392,9 +404,7 @@ fn probe_evm_version(
         update_progress!(pb, index);
 
         // skip system transactions
-        if is_known_system_sender(tx.from) ||
-            tx.transaction_type.map(|ty| ty.to::<u64>()) == Some(SYSTEM_TRANSACTION_TYPE)
-        {
+        if is_known_system_sender(tx.from) || tx.transaction_type == Some(SYSTEM_TRANSACTION_TYPE) {
             continue;
         }
 
@@ -414,10 +424,7 @@ fn probe_evm_version(
         }
 
         // get the actual gas used
-        let real_gas_used = receipt
-            .gas_used
-            .ok_or(eyre!("Failed to get atual gas used for transaction: {:?}", tx.hash))?
-            .to::<u64>();
+        let real_gas_used = receipt.gas_used as u64;
 
         if tx.to.is_some() {
             let rv = executor.commit_tx_with_env(env.clone());
@@ -434,22 +441,10 @@ fn probe_evm_version(
             );
 
             // check transaction status
-            match receipt.status_code {
-                Some(status) if status.to::<u64>() == 0 => {
-                    eyre::ensure!(
-                        !rv.exit_reason.is_ok(),
-                        "Transaction should fail ({:?})",
-                        tx.hash
-                    );
-                }
-                Some(status) if status.to::<u64>() == 1 => {
-                    eyre::ensure!(
-                        rv.exit_reason.is_ok(),
-                        "Transaction should succeed ({:?})",
-                        tx.hash
-                    );
-                }
-                _ => {}
+            if (**receipt).inner.inner.receipt.status {
+                eyre::ensure!(rv.exit_reason.is_ok(), "Transaction should succeed ({:?})", tx.hash);
+            } else {
+                eyre::ensure!(!rv.exit_reason.is_ok(), "Transaction should fail ({:?})", tx.hash);
             }
         } else {
             match executor.deploy_with_env(env.clone(), None) {
@@ -463,8 +458,8 @@ fn probe_evm_version(
                         tx.hash
                     );
                     eyre::ensure!(
-                        receipt.status_code != Some(U64::from(1)),
-                        "Transaction should succeed ({:?})",
+                        !(**receipt).inner.inner.receipt.status,
+                        "Transaction should fail ({:?})",
                         tx.hash
                     );
                 }
@@ -485,8 +480,8 @@ fn probe_evm_version(
                         tx.hash
                     );
                     eyre::ensure!(
-                        receipt.status_code != Some(U64::from(0)),
-                        "Transaction should fail ({:?})",
+                        (**receipt).inner.inner.receipt.status,
+                        "Transaction should succeed ({:?})",
                         tx.hash
                     );
                 }

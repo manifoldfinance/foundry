@@ -2,7 +2,7 @@
 
 use alloy_primitives::U256;
 use forge::{
-    inspectors::CheatsConfig, MultiContractRunner, MultiContractRunnerBuilder, TestOptions,
+    revm::primitives::SpecId, MultiContractRunner, MultiContractRunnerBuilder, TestOptions,
     TestOptionsBuilder,
 };
 use foundry_compilers::{
@@ -23,6 +23,7 @@ use std::{
     env, fmt,
     io::Write,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 pub const RE_PATH_SEPARATOR: &str = "/";
@@ -32,6 +33,7 @@ const TESTDATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../testdata");
 pub enum ForgeTestProfile {
     Default,
     Cancun,
+    MultiVersion,
 }
 
 impl fmt::Display for ForgeTestProfile {
@@ -39,11 +41,17 @@ impl fmt::Display for ForgeTestProfile {
         match self {
             ForgeTestProfile::Default => write!(f, "default"),
             ForgeTestProfile::Cancun => write!(f, "cancun"),
+            ForgeTestProfile::MultiVersion => write!(f, "multi-version"),
         }
     }
 }
 
 impl ForgeTestProfile {
+    /// Returns true if the profile is Cancun.
+    pub fn is_cancun(&self) -> bool {
+        matches!(self, Self::Cancun)
+    }
+
     pub fn root(&self) -> PathBuf {
         PathBuf::from(TESTDATA)
     }
@@ -145,7 +153,7 @@ impl ForgeTestProfile {
             "fork/Fork.t.sol:DssExecLib:0xfD88CeE74f7D78697775aBDAE53f9Da1559728E4".to_string(),
         ];
 
-        if matches!(self, Self::Cancun) {
+        if self.is_cancun() {
             config.evm_version = EvmVersion::Cancun;
         }
 
@@ -160,6 +168,7 @@ pub struct ForgeTestData {
     pub test_opts: TestOptions,
     pub evm_opts: EvmOpts,
     pub config: Config,
+    pub profile: ForgeTestProfile,
 }
 
 impl ForgeTestData {
@@ -173,15 +182,20 @@ impl ForgeTestData {
         let config = profile.config();
         let evm_opts = profile.evm_opts();
 
-        Self { project, output, test_opts, evm_opts, config }
+        Self { project, output, test_opts, evm_opts, config, profile }
     }
 
     /// Builds a base runner
     pub fn base_runner(&self) -> MultiContractRunnerBuilder {
         init_tracing();
-        MultiContractRunnerBuilder::default()
+        let mut runner = MultiContractRunnerBuilder::new(Arc::new(self.config.clone()))
             .sender(self.evm_opts.sender)
-            .with_test_options(self.test_opts.clone())
+            .with_test_options(self.test_opts.clone());
+        if self.profile.is_cancun() {
+            runner = runner.evm_spec(SpecId::CANCUN);
+        }
+
+        runner
     }
 
     /// Builds a non-tracing runner
@@ -201,12 +215,22 @@ impl ForgeTestData {
         config.prompt_timeout = 0;
 
         let root = self.project.root();
-        let opts = self.evm_opts.clone();
+        let mut opts = self.evm_opts.clone();
+
+        if config.isolate {
+            opts.isolate = true;
+        }
+
         let env = opts.local_evm_env();
         let output = self.output.clone();
-        self.base_runner()
-            .with_cheats_config(CheatsConfig::new(&config, opts.clone(), None))
-            .sender(config.sender)
+
+        let sender = config.sender;
+
+        let mut builder = self.base_runner();
+        builder.config = Arc::new(config);
+        builder
+            .enable_isolation(opts.isolate)
+            .sender(sender)
             .with_test_options(self.test_opts.clone())
             .build(root, output, env, opts.clone())
             .unwrap()
@@ -272,6 +296,10 @@ pub static TEST_DATA_DEFAULT: Lazy<ForgeTestData> =
 /// Data for tests requiring Cancun support on Solc and EVM level.
 pub static TEST_DATA_CANCUN: Lazy<ForgeTestData> =
     Lazy::new(|| ForgeTestData::new(ForgeTestProfile::Cancun));
+
+/// Data for tests requiring Cancun support on Solc and EVM level.
+pub static TEST_DATA_MULTI_VERSION: Lazy<ForgeTestData> =
+    Lazy::new(|| ForgeTestData::new(ForgeTestProfile::MultiVersion));
 
 pub fn manifest_root() -> &'static Path {
     let mut root = Path::new(env!("CARGO_MANIFEST_DIR"));
