@@ -20,7 +20,10 @@ use foundry_evm::{
     decode::{decode_console_logs, RevertDecoder},
     executors::{
         fuzz::{CaseOutcome, CounterExampleOutcome, FuzzOutcome, FuzzedExecutor},
-        invariant::{replay_run, InvariantExecutor, InvariantFuzzError, InvariantFuzzTestResult},
+        invariant::{
+            replay_error, replay_run, InvariantExecutor, InvariantFuzzError,
+            InvariantFuzzTestResult,
+        },
         CallResult, EvmError, ExecutionErr, Executor, RawCallResult,
     },
     fuzz::{fixture_name, invariant::InvariantContract, CounterExample, FuzzFixtures},
@@ -251,6 +254,7 @@ impl<'a> ContractRunner<'a> {
         filter: &dyn TestFilter,
         test_options: &TestOptions,
         known_contracts: Arc<ContractsByArtifact>,
+        handle: &tokio::runtime::Handle,
     ) -> SuiteResult {
         info!("starting tests");
         let start = Instant::now();
@@ -343,6 +347,8 @@ impl<'a> ContractRunner<'a> {
         let test_results = functions
             .par_iter()
             .map(|&func| {
+                let _guard = handle.enter();
+
                 let sig = func.signature();
 
                 let setup = setup.clone();
@@ -580,12 +586,17 @@ impl<'a> ContractRunner<'a> {
             Some(error) => match error {
                 InvariantFuzzError::BrokenInvariant(case_data) |
                 InvariantFuzzError::Revert(case_data) => {
-                    match case_data.replay(
+                    // Replay error to create counterexample and to collect logs, traces and
+                    // coverage.
+                    match replay_error(
+                        &case_data,
+                        &invariant_contract,
                         self.executor.clone(),
                         known_contracts,
                         identified_contracts.clone(),
                         &mut logs,
                         &mut traces,
+                        &mut coverage,
                     ) {
                         Ok(c) => counterexample = c,
                         Err(err) => {
@@ -607,7 +618,6 @@ impl<'a> ContractRunner<'a> {
                     &mut logs,
                     &mut traces,
                     &mut coverage,
-                    func.clone(),
                     last_run_inputs.clone(),
                 ) {
                     error!(%err, "Failed to replay last invariant run");

@@ -6,7 +6,7 @@ extern crate tracing;
 use self::transaction::AdditionalContract;
 use crate::runner::ScriptRunner;
 use alloy_json_abi::{Function, JsonAbi};
-use alloy_primitives::{Address, Bytes, Log, U256};
+use alloy_primitives::{Address, Bytes, Log, TxKind, U256};
 use alloy_signer::Signer;
 use broadcast::next_nonce;
 use build::PreprocessedState;
@@ -19,7 +19,6 @@ use foundry_common::{
     abi::{encode_function_args, get_func},
     compile::SkipBuildFilter,
     evm::{Breakpoints, EvmArgs},
-    provider::alloy::RpcUrl,
     shell, ContractsByArtifact, CONTRACT_MAX_SIZE, SELECTOR_LEN,
 };
 use foundry_compilers::ArtifactId;
@@ -421,13 +420,15 @@ impl ScriptArgs {
             let mut offset = 0;
 
             // Find if it's a CREATE or CREATE2. Otherwise, skip transaction.
-            if let Some(to) = to {
+            if let Some(TxKind::Call(to)) = to {
                 if to == DEFAULT_CREATE2_DEPLOYER {
                     // Size of the salt prefix.
                     offset = 32;
+                } else {
+                    continue;
                 }
-            } else if to.is_some() {
-                continue;
+            } else if let Some(TxKind::Create) = to {
+                // Pass
             }
 
             // Find artifact with a deployment code same as the data.
@@ -532,7 +533,7 @@ pub struct ScriptConfig {
     pub evm_opts: EvmOpts,
     pub sender_nonce: u64,
     /// Maps a rpc url to a backend
-    pub backends: HashMap<RpcUrl, Backend>,
+    pub backends: HashMap<String, Backend>,
 }
 
 impl ScriptConfig {

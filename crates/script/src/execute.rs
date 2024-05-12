@@ -19,7 +19,7 @@ use foundry_cli::{
 };
 use foundry_common::{
     fmt::{format_token, format_token_raw},
-    provider::alloy::{get_http_provider, RpcUrl},
+    provider::get_http_provider,
     shell, ContractData, ContractsByArtifact,
 };
 use foundry_config::{Config, NamedChain};
@@ -260,7 +260,7 @@ impl PreExecutionState {
 /// Container for information about RPC-endpoints used during script execution.
 pub struct RpcData {
     /// Unique list of rpc urls present.
-    pub total_rpcs: HashSet<RpcUrl>,
+    pub total_rpcs: HashSet<String>,
     /// If true, one of the transactions did not have a rpc.
     pub missing_rpc: bool,
 }
@@ -333,7 +333,7 @@ impl ExecutedState {
     pub async fn prepare_simulation(self) -> Result<PreSimulationState> {
         let returns = self.get_returns()?;
 
-        let decoder = self.build_trace_decoder(&self.build_data.known_contracts)?;
+        let decoder = self.build_trace_decoder(&self.build_data.known_contracts).await?;
 
         let txs = self.execution_result.transactions.clone().unwrap_or_default();
         let rpc_data = RpcData::from_transactions(&txs);
@@ -363,7 +363,7 @@ impl ExecutedState {
     }
 
     /// Builds [CallTraceDecoder] from the execution result and known contracts.
-    fn build_trace_decoder(
+    async fn build_trace_decoder(
         &self,
         known_contracts: &ContractsByArtifact,
     ) -> Result<CallTraceDecoder> {
@@ -379,7 +379,7 @@ impl ExecutedState {
 
         let mut identifier = TraceIdentifiers::new().with_local(known_contracts).with_etherscan(
             &self.script_config.config,
-            self.script_config.evm_opts.get_remote_chain_id(),
+            self.script_config.evm_opts.get_remote_chain_id().await,
         )?;
 
         // Decoding traces using etherscan is costly as we run into rate limits,
