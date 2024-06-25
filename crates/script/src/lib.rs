@@ -1,4 +1,9 @@
+//! # foundry-script
+//!
+//! Smart contract scripting.
+
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
+#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 #[macro_use]
 extern crate tracing;
@@ -6,7 +11,7 @@ extern crate tracing;
 use self::transaction::AdditionalContract;
 use crate::runner::ScriptRunner;
 use alloy_json_abi::{Function, JsonAbi};
-use alloy_primitives::{Address, Bytes, Log, TxKind, U256};
+use alloy_primitives::{hex, Address, Bytes, Log, TxKind, U256};
 use alloy_signer::Signer;
 use broadcast::next_nonce;
 use build::PreprocessedState;
@@ -17,7 +22,6 @@ use forge_verify::RetryArgs;
 use foundry_cli::{opts::CoreBuildArgs, utils::LoadConfig};
 use foundry_common::{
     abi::{encode_function_args, get_func},
-    compile::SkipBuildFilter,
     evm::{Breakpoints, EvmArgs},
     shell, ContractsByArtifact, CONTRACT_MAX_SIZE, SELECTOR_LEN,
 };
@@ -51,6 +55,7 @@ mod broadcast;
 mod build;
 mod execute;
 mod multi_sequence;
+mod progress;
 mod providers;
 mod receipts;
 mod runner;
@@ -174,12 +179,6 @@ pub struct ScriptArgs {
     )]
     pub with_gas_price: Option<U256>,
 
-    /// Skip building files whose names contain the given filter.
-    ///
-    /// `test` and `script` are aliases for `.t.sol` and `.s.sol`.
-    #[arg(long, num_args(1..))]
-    pub skip: Option<Vec<SkipBuildFilter>>,
-
     /// One `forge clone`d project that will be used to tweak the code of the corresponding
     /// on-chain contract.
     ///
@@ -217,8 +216,6 @@ pub struct ScriptArgs {
     pub retry: RetryArgs,
 }
 
-// === impl ScriptArgs ===
-
 impl ScriptArgs {
     async fn preprocess(self) -> Result<PreprocessedState> {
         let script_wallets =
@@ -249,7 +246,8 @@ impl ScriptArgs {
         } else {
             // Drive state machine to point at which we have everything needed for simulation.
             let pre_simulation = compiled
-                .link()?
+                .link()
+                .await?
                 .prepare_execution()
                 .await?
                 .execute()
@@ -381,8 +379,8 @@ impl ScriptArgs {
 
         // From artifacts
         for (artifact, contract) in known_contracts.iter() {
-            let Some(bytecode) = &contract.bytecode else { continue };
-            let Some(deployed_bytecode) = &contract.deployed_bytecode else { continue };
+            let Some(bytecode) = contract.bytecode() else { continue };
+            let Some(deployed_bytecode) = contract.deployed_bytecode() else { continue };
             bytecodes.push((artifact.name.clone(), bytecode, deployed_bytecode));
         }
 
@@ -611,7 +609,7 @@ impl ScriptConfig {
                         CheatsConfig::new(
                             &self.config,
                             self.evm_opts.clone(),
-                            Some(Arc::new(known_contracts)),
+                            Some(known_contracts),
                             Some(script_wallets),
                             Some(target.version),
                         )
@@ -621,11 +619,7 @@ impl ScriptConfig {
             });
         }
 
-        Ok(ScriptRunner::new(
-            builder.build(env, db),
-            self.evm_opts.initial_balance,
-            self.evm_opts.sender,
-        ))
+        Ok(ScriptRunner::new(builder.build(env, db), self.evm_opts.clone()))
     }
 }
 

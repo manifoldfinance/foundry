@@ -1,12 +1,11 @@
 //! Helper trait and functions to format Ethereum types.
 
-use crate::TransactionReceiptWithRevertReason;
-use alloy_consensus::{AnyReceiptEnvelope, Receipt, ReceiptWithBloom, TxType};
-use alloy_primitives::*;
+use alloy_consensus::{AnyReceiptEnvelope, Eip658Value, Receipt, ReceiptWithBloom, TxType};
+use alloy_primitives::{hex, Address, Bloom, Bytes, FixedBytes, Uint, B256, I256, U256, U64};
 use alloy_rpc_types::{
-    other::OtherFields, AnyTransactionReceipt, Block, BlockTransactions, Log, Transaction,
-    TransactionReceipt,
+    AnyTransactionReceipt, Block, BlockTransactions, Log, Transaction, TransactionReceipt,
 };
+use alloy_serde::OtherFields;
 use serde::Deserialize;
 
 /// length of the name column for pretty formatting `{:>20}{value}`
@@ -17,7 +16,7 @@ const NAME_COLUMN_LEN: usize = 20usize;
 /// # Examples
 ///
 /// ```
-/// use foundry_common::fmt::UIfmt;
+/// use foundry_common_fmt::UIfmt;
 ///
 /// let boolean: bool = true;
 /// let string = boolean.pretty();
@@ -147,8 +146,13 @@ impl UIfmt for [u8] {
     }
 }
 
-pub fn pretty_status(status: bool) -> String {
-    if status { "1 (success)" } else { "0 (failed)" }.to_string()
+impl UIfmt for Eip658Value {
+    fn pretty(&self) -> String {
+        match self {
+            Self::Eip658(status) => if *status { "1 (success)" } else { "0 (failed)" }.to_string(),
+            Self::PostState(state) => state.pretty(),
+        }
+    }
 }
 
 impl UIfmt for AnyTransactionReceipt {
@@ -209,7 +213,7 @@ blobGasUsed             {}",
             serde_json::to_string(&logs).unwrap(),
             logs_bloom.pretty(),
             state_root.pretty(),
-            pretty_status(*status),
+            status.pretty(),
             transaction_hash.pretty(),
             transaction_index.pretty(),
             transaction_type,
@@ -223,7 +227,7 @@ blobGasUsed             {}",
 
         // additional captured fields
         for (key, val) in other.iter() {
-            pretty.push_str(&format!("\n{}             {}", key, val));
+            pretty.push_str(&format!("\n{key}             {val}"));
         }
 
         pretty
@@ -271,9 +275,9 @@ transactions:        {}",
 impl UIfmt for BlockTransactions {
     fn pretty(&self) -> String {
         match self {
-            BlockTransactions::Hashes(hashes) => hashes.pretty(),
-            BlockTransactions::Full(transactions) => transactions.pretty(),
-            BlockTransactions::Uncle => String::new(),
+            Self::Hashes(hashes) => hashes.pretty(),
+            Self::Full(transactions) => transactions.pretty(),
+            Self::Uncle => String::new(),
         }
     }
 }
@@ -333,21 +337,6 @@ value                {}{}",
     }
 }
 
-impl UIfmt for TransactionReceiptWithRevertReason {
-    fn pretty(&self) -> String {
-        if let Some(revert_reason) = &self.revert_reason {
-            format!(
-                "{}
-revertReason            {}",
-                self.receipt.pretty(),
-                revert_reason
-            )
-        } else {
-            self.receipt.pretty()
-        }
-    }
-}
-
 /// Various numerical ethereum types used for pretty printing
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
@@ -369,11 +358,11 @@ impl From<serde_json::Value> for EthValue {
 impl UIfmt for EthValue {
     fn pretty(&self) -> String {
         match self {
-            EthValue::U64(num) => num.pretty(),
-            EthValue::U256(num) => num.pretty(),
-            EthValue::U64Array(arr) => arr.pretty(),
-            EthValue::U256Array(arr) => arr.pretty(),
-            EthValue::Other(val) => val.to_string().trim_matches('"').to_string(),
+            Self::U64(num) => num.pretty(),
+            Self::U256(num) => num.pretty(),
+            Self::U64Array(arr) => arr.pretty(),
+            Self::U256Array(arr) => arr.pretty(),
+            Self::Other(val) => val.to_string().trim_matches('"').to_string(),
         }
     }
 }
@@ -401,38 +390,6 @@ pub fn get_pretty_tx_attr(transaction: &Transaction, attr: &str) -> Option<Strin
             }
             None
         }
-    }
-}
-
-/// Returns the `UiFmt::pretty()` formatted attribute of the transaction receipt
-pub fn get_pretty_tx_receipt_attr(
-    receipt: &TransactionReceiptWithRevertReason,
-    attr: &str,
-) -> Option<String> {
-    match attr {
-        "blockHash" | "block_hash" => Some(receipt.receipt.block_hash.pretty()),
-        "blockNumber" | "block_number" => Some(receipt.receipt.block_number.pretty()),
-        "contractAddress" | "contract_address" => Some(receipt.receipt.contract_address.pretty()),
-        "cumulativeGasUsed" | "cumulative_gas_used" => {
-            Some(receipt.receipt.inner.inner.inner.receipt.cumulative_gas_used.pretty())
-        }
-        "effectiveGasPrice" | "effective_gas_price" => {
-            Some(receipt.receipt.effective_gas_price.to_string())
-        }
-        "gasUsed" | "gas_used" => Some(receipt.receipt.gas_used.to_string()),
-        "logs" => Some(receipt.receipt.inner.inner.inner.receipt.logs.as_slice().pretty()),
-        "logsBloom" | "logs_bloom" => Some(receipt.receipt.inner.inner.inner.logs_bloom.pretty()),
-        "root" | "stateRoot" | "state_root " => Some(receipt.receipt.state_root.pretty()),
-        "status" | "statusCode" | "status_code" => {
-            Some(pretty_status(receipt.receipt.inner.inner.inner.receipt.status))
-        }
-        "transactionHash" | "transaction_hash" => Some(receipt.receipt.transaction_hash.pretty()),
-        "transactionIndex" | "transaction_index" => {
-            Some(receipt.receipt.transaction_index.pretty())
-        }
-        "type" | "transaction_type" => Some(receipt.receipt.inner.inner.r#type.to_string()),
-        "revertReason" | "revert_reason" => Some(receipt.revert_reason.pretty()),
-        _ => None,
     }
 }
 
@@ -488,7 +445,7 @@ receiptsRoot         {}
 sha3Uncles           {}
 size                 {}
 stateRoot            {}
-timestamp            {}
+timestamp            {} ({})
 withdrawalsRoot      {}
 totalDifficulty      {}{}",
         block.header.base_fee_per_gas.pretty(),
@@ -509,6 +466,9 @@ totalDifficulty      {}{}",
         block.size.pretty(),
         block.header.state_root.pretty(),
         block.header.timestamp.pretty(),
+        chrono::DateTime::from_timestamp(block.header.timestamp as i64, 0)
+            .expect("block timestamp in range")
+            .to_rfc2822(),
         block.header.withdrawals_root.pretty(),
         block.header.total_difficulty.pretty(),
         block.other.pretty()

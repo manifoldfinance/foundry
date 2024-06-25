@@ -1,10 +1,8 @@
-use std::fmt::{Debug, Display};
-
-use alloy_primitives::{I256, U256};
+use crate::{Cheatcode, Cheatcodes, Result, Vm::*};
+use alloy_primitives::{hex, I256, U256};
 use foundry_evm_core::abi::{format_units_int, format_units_uint};
 use itertools::Itertools;
-
-use crate::{Cheatcode, Cheatcodes, Result, Vm::*};
+use std::fmt::{Debug, Display};
 
 const EQ_REL_DELTA_RESOLUTION: U256 = U256::from_limbs([18, 0, 0, 0]);
 
@@ -925,7 +923,7 @@ impl Cheatcode for assertLeDecimal_3Call {
 impl Cheatcode for assertApproxEqAbs_0Call {
     fn apply(&self, _state: &mut Cheatcodes) -> Result {
         Ok(uint_assert_approx_eq_abs(self.left, self.right, self.maxDelta)
-            .map_err(|e| format!("assertion failed: {}", e))?)
+            .map_err(|e| format!("assertion failed: {e}"))?)
     }
 }
 
@@ -939,7 +937,7 @@ impl Cheatcode for assertApproxEqAbs_1Call {
 impl Cheatcode for assertApproxEqAbs_2Call {
     fn apply(&self, _state: &mut Cheatcodes) -> Result {
         Ok(int_assert_approx_eq_abs(self.left, self.right, self.maxDelta)
-            .map_err(|e| format!("assertion failed: {}", e))?)
+            .map_err(|e| format!("assertion failed: {e}"))?)
     }
 }
 
@@ -981,7 +979,7 @@ impl Cheatcode for assertApproxEqAbsDecimal_3Call {
 impl Cheatcode for assertApproxEqRel_0Call {
     fn apply(&self, _state: &mut Cheatcodes) -> Result {
         Ok(uint_assert_approx_eq_rel(self.left, self.right, self.maxPercentDelta)
-            .map_err(|e| format!("assertion failed: {}", e))?)
+            .map_err(|e| format!("assertion failed: {e}"))?)
     }
 }
 
@@ -995,7 +993,7 @@ impl Cheatcode for assertApproxEqRel_1Call {
 impl Cheatcode for assertApproxEqRel_2Call {
     fn apply(&self, _state: &mut Cheatcodes) -> Result {
         Ok(int_assert_approx_eq_rel(self.left, self.right, self.maxPercentDelta)
-            .map_err(|e| format!("assertion failed: {}", e))?)
+            .map_err(|e| format!("assertion failed: {e}"))?)
     }
 }
 

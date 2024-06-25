@@ -1,18 +1,29 @@
 use crate::opcodes;
-use alloy_primitives::{Address, Bytes, U256};
+use alloy_primitives::{hex, Address, Bytes, U256};
 use arrayvec::ArrayVec;
 use revm::interpreter::OpCode;
 use revm_inspectors::tracing::types::CallKind;
 use serde::{Deserialize, Serialize};
 
 /// An arena of [DebugNode]s
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DebugArena {
     /// The arena of nodes
     pub arena: Vec<DebugNode>,
 }
 
+impl Default for DebugArena {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DebugArena {
+    /// Creates a new debug arena.
+    pub const fn new() -> Self {
+        Self { arena: Vec::new() }
+    }
+
     /// Pushes a new debug node into the arena
     pub fn push_node(&mut self, mut new_node: DebugNode) -> usize {
         fn recursively_push(
