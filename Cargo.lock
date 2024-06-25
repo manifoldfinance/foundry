@@ -4055,9 +4055,9 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
- "toml 0.8.12",
+ "toml 0.8.14",
  "vergen",
- "yansi 0.5.1",
+ "yansi",
 ]
 
 [[package]]

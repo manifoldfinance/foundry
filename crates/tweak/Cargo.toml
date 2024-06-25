@@ -49,7 +49,7 @@ eyre.workspace = true
 # rayon = "1"
 serde.workspace = true
 # tracing.workspace = true
-yansi = "0.5"
+yansi.workspace = true
 
 # # bin
 # forge-doc.workspace = true

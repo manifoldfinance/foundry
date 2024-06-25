@@ -54,7 +54,7 @@ pub fn tweak_backend_once(
         B256::from_slice(&keccak256(tweaked_code.as_ref())[..])
     };
     info.code_hash = code_hash;
-    info.code = Some(Bytecode::new_raw(alloy_primitives::Bytes(tweaked_code.0)).to_checked());
+    info.code = Some(Bytecode::new_raw(alloy_primitives::Bytes(tweaked_code.0)));
     backend.insert_account_info(tweak_address, info);
     Ok(())
 }
@@ -69,7 +69,7 @@ pub fn tweak_backend(backend: &mut Backend, tweak_data: &TweakData) -> Result<()
         };
         info.code_hash = code_hash;
         info.code =
-            Some(Bytecode::new_raw(alloy_primitives::Bytes(tweaked_code.clone().0)).to_checked());
+            Some(Bytecode::new_raw(alloy_primitives::Bytes(tweaked_code.clone().0)));
         backend.insert_account_info(*tweak_address, info);
     }
 

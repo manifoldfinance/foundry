@@ -134,6 +134,11 @@ impl Executor {
         &self.env.env
     }
 
+    /// Returns a reference to the EVM environment with the handler configuration.
+    pub fn env_with_handler_cfg(&self) -> &EnvWithHandlerCfg {
+        &self.env
+    }
+
     /// Returns a mutable reference to the EVM environment.
     pub fn env_mut(&mut self) -> &mut Env {
         &mut self.env.env

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use alloy_primitives::U256;
 use alloy_provider::Provider;
 use alloy_rpc_types::BlockTransactions;
-use cast::{decode::decode_console_logs, {revm::primitives::EnvWithHandlerCfg}, traces::TraceKind};
+use cast::{decode::decode_console_logs, revm::primitives::EnvWithHandlerCfg, traces::TraceKind};
 use clap::Parser;
 use eyre::{Result, WrapErr};
 use foundry_cli::{
@@ -168,7 +168,7 @@ impl RunArgs {
             }
             let tweak_map =
                 foundry_tweak::build_tweak_data(&cloned_projects, &self.rpc, self.quick).await?;
-            tweak_backend(&mut executor.backend, &tweak_map)?;
+            tweak_backend(executor.backend_mut(), &tweak_map)?;
         }
         println!("Executing transaction: {:?}", tx.hash);
 
@@ -188,7 +188,7 @@ impl RunArgs {
                 };
 
                 let txs = txs.into_iter().take_while(|tx| tx.hash != tx_hash).collect::<Vec<_>>();
-                let pb = init_progress!(txs, "tx");
+                let pb = init_progress(txs.len() as u64, "tx");
                 pb.set_position(0);
 
                 for (index, tx) in txs.into_iter().enumerate() {
@@ -244,23 +244,23 @@ impl RunArgs {
 
             if let Some(to) = tx.to {
                 trace!(tx=?tx.hash, to=?to, "executing call transaction");
-                TraceResult::from_raw(executor.transact_with_env(env)?, TraceKind::Execution)
-                let result = executor.commit_tx_with_env(env)?;
+                let result = executor.transact_with_env(env)?;
                 let logs = decode_console_logs(&result.logs);
-                (TraceResult::from(result), logs)
+                (TraceResult::from_raw(result, TraceKind::Execution), logs)
             } else {
                 trace!(tx=?tx.hash, "executing create transaction");
-                match executor.deploy_with_env(env, None) {
+                let deploy_result = executor.deploy_with_env(env, None);
+                match deploy_result {
                     Ok(res) => {
                         let logs = decode_console_logs(&res.logs);
                         (TraceResult::from(res), logs)
                     }
-                    Err(err) => {
+                    Err(ref err) => {
                         let logs = match &err {
                             EvmError::Execution(e) => decode_console_logs(&e.logs),
                             _ => vec![],
                         };
-                        (TraceResult::try_from(err)?, logs)
+                        (TraceResult::try_from(deploy_result)?, logs)
                     }
                 }
             }

@@ -5,15 +5,18 @@
 use alloy_primitives::{Address, Bytes, TxHash, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::{
-    AnyReceiptEnvelope, BlockId, BlockTransactions, Log, Transaction, TransactionReceipt,
-    WithOtherFields,
+    serde_helpers::WithOtherFields, AnyReceiptEnvelope, BlockId, BlockTransactions, BlockTransactionsKind, Log, Transaction, TransactionReceipt
 };
 use eyre::{eyre, Context, Result};
-use foundry_cli::{init_progress, opts::RpcOpts, p_println, update_progress};
-use foundry_common::{
-    cli_warn, is_known_system_sender, provider::alloy::ProviderBuilder, SYSTEM_TRANSACTION_TYPE,
+use foundry_cli::{
+    utils::init_progress,
+    opts::RpcOpts,
+    p_println,
 };
-use foundry_compilers::{Artifact, ConfigurableContractArtifact};
+use foundry_common::{
+    cli_warn, is_known_system_sender, provider::ProviderBuilder, SYSTEM_TRANSACTION_TYPE,
+};
+use foundry_compilers::{artifacts::ConfigurableContractArtifact, Artifact};
 use foundry_config::{figment::Figment, Config, NamedChain};
 use foundry_evm::{
     backend::Backend,
@@ -136,7 +139,7 @@ impl Inspector<&mut Backend> for TweakInspctor {
             {
                 if let Some(address) = outcome.address {
                     if let Ok((code, _)) = context.code(address) {
-                        self.tweaked_code = Some(code.bytes().clone());
+                        self.tweaked_code = Some(code.clone());
                     }
                 }
             }
@@ -160,12 +163,12 @@ impl Inspector<&mut Backend> for TweakInspctor {
                 // we know that we are in the CREATE call that creates the target contract.
                 // We record the address of the created contract, so that we can replace it
                 // with the original address of contract being tweaked.
-                self.created_address_in_tweak.replace(interp.contract().address);
+                self.created_address_in_tweak.replace(interp.contract().target_address);
             }
             // the `step_end` hook should replace the output of ADDRESS code only if the
             // current execution is in the context of the target contract
             self.to_update_address = interp.current_opcode() == OpCode::ADDRESS.get() &&
-                self.created_address_in_tweak.unwrap() == interp.contract().address;
+                self.created_address_in_tweak.unwrap() == interp.contract().target_address;
         }
     }
 
@@ -288,7 +291,7 @@ async fn prepare_backend(
 
     // then, we are going to replay all transactions before the creation transaction
     let block = provider
-        .get_block(BlockId::Number(block_number.into()), true)
+        .get_block(BlockId::Number(block_number.into()), BlockTransactionsKind::Full)
         .await?
         .ok_or(eyre!("block not found"))?;
 
@@ -323,7 +326,7 @@ async fn prepare_backend(
             .collect()
     } else {
         vec![(
-            provider.get_transaction_by_hash(project.metadata.creation_transaction).await?,
+            provider.get_transaction_by_hash(project.metadata.creation_transaction).await?.ok_or(eyre!("the transaction is not mined"))?,
             tx_receipt,
         )]
     };
@@ -391,17 +394,17 @@ fn probe_evm_version(
     txs: &[(TransactionExt, TransactionReceiptExt)],
     target_tx: Option<TxHash>,
 ) -> Result<(Backend, EnvWithHandlerCfg)> {
-    let mut env = executor.env.clone();
+    let mut env = executor.env_with_handler_cfg().clone();
 
     env.block = block_env.clone();
 
     let non_standard_precompiled = NonStandardPrecompiled::get_precomiled_address(chain_id);
 
-    let pb = init_progress!(txs, format!("investigating {:?}", executor.spec_id()).as_str());
+    let pb = init_progress(txs.len() as u64, format!("investigating {:?}", executor.spec_id()).as_str());
     pb.set_position(0);
 
     for (index, (tx, receipt)) in txs.iter().enumerate() {
-        update_progress!(pb, index);
+        pb.set_position(index as u64 + 1);
 
         // skip system transactions
         if is_known_system_sender(tx.from) || tx.transaction_type == Some(SYSTEM_TRANSACTION_TYPE) {
@@ -420,14 +423,14 @@ fn probe_evm_version(
 
         // find the creation transaction
         if Some(tx.hash) == target_tx {
-            return Ok((executor.backend, env));
+            return Ok((executor.backend().clone(), env));
         }
 
         // get the actual gas used
         let real_gas_used = receipt.gas_used as u64;
 
         if tx.to.is_some() {
-            let rv = executor.commit_tx_with_env(env.clone());
+            let rv = executor.transact_with_env(env.clone());
 
             let rv = rv.wrap_err("Executing transaction fails")?;
 
@@ -441,7 +444,7 @@ fn probe_evm_version(
             );
 
             // check transaction status
-            if (**receipt).inner.inner.receipt.status {
+            if (**receipt).inner.inner.receipt.status.coerce_status() {
                 eyre::ensure!(rv.exit_reason.is_ok(), "Transaction should succeed ({:?})", tx.hash);
             } else {
                 eyre::ensure!(!rv.exit_reason.is_ok(), "Transaction should fail ({:?})", tx.hash);
@@ -458,7 +461,7 @@ fn probe_evm_version(
                         tx.hash
                     );
                     eyre::ensure!(
-                        !(**receipt).inner.inner.receipt.status,
+                        !(**receipt).inner.inner.receipt.status.coerce_status(),
                         "Transaction should fail ({:?})",
                         tx.hash
                     );
@@ -480,7 +483,7 @@ fn probe_evm_version(
                         tx.hash
                     );
                     eyre::ensure!(
-                        (**receipt).inner.inner.receipt.status,
+                        (**receipt).inner.inner.receipt.status.coerce_status(),
                         "Transaction should succeed ({:?})",
                         tx.hash
                     );
@@ -490,7 +493,7 @@ fn probe_evm_version(
     }
 
     if target_tx.is_none() {
-        Ok((executor.backend, env))
+        Ok((executor.backend().clone(), env))
     } else {
         Err(eyre!("the target transaction is not found"))
     }
@@ -504,7 +507,7 @@ mod tests {
 
     use alloy_primitives::Bytes;
     use foundry_cli::opts::RpcOpts;
-    use foundry_compilers::EvmVersion;
+    use foundry_compilers::artifacts::EvmVersion;
     use foundry_config::Config;
 
     fn get_fake_project(address: &str, tx: &str) -> ClonedProject {

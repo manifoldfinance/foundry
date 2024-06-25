@@ -142,7 +142,7 @@ impl PreExecutionState {
                 self.build_data.build_data.target.clone(),
             )
             .await?;
-        tweak_backend(&mut runner.executor.backend, &self.tweak_data)?;
+        tweak_backend(runner.executor.backend_mut(), &self.tweak_data)?;
         let result = self.execute_with_runner(&mut runner).await?;
 
         // If we have a new sender from execution, we need to use it to deploy libraries and relink

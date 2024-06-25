@@ -1,23 +1,19 @@
 use std::collections::BTreeMap;
 
+use alloy_network::TransactionResponse;
 use alloy_primitives::{Address, Bytes, TxHash, U128, U256};
 use alloy_provider::Provider;
-use alloy_rpc_types::{Block, BlockTransactions, Transaction};
+use alloy_rpc_types::{Block, BlockTransactions, BlockTransactionsKind, Transaction};
 use eyre::{eyre, Context, Result};
 use forge::{
-    decode::decode_console_logs,
-    executors::{DeployResult, EvmError, Executor, ExecutorBuilder, RawCallResult},
-    revm::primitives::EnvWithHandlerCfg,
-    utils::configure_tx_env,
+    decode::decode_console_logs, executors::{DeployResult, EvmError, Executor, ExecutorBuilder, RawCallResult}, revm::primitives::EnvWithHandlerCfg, traces::TraceKind, utils::configure_tx_env
 };
 use foundry_cli::{
-    init_progress,
     opts::RpcOpts,
-    update_progress,
-    utils::{handle_traces, TraceResult},
+    utils::{handle_traces, init_progress, TraceResult},
 };
 use foundry_common::{is_known_system_sender, SYSTEM_TRANSACTION_TYPE};
-use foundry_compilers::EvmVersion;
+use foundry_compilers::artifacts::EvmVersion;
 use foundry_evm::opts::EvmOpts;
 
 use clap::Parser;
@@ -148,14 +144,14 @@ impl ReplayArgs {
         let mut config = config.clone();
 
         // construct JSON-RPC provider
-        let provider = foundry_common::provider::alloy::ProviderBuilder::new(
+        let provider = foundry_common::provider::ProviderBuilder::new(
             &config.get_rpc_url_or_localhost_http()?,
         )
         .compute_units_per_second_opt(compute_units_per_second)
         .build()?;
 
         // get transactiond data
-        let mut tx = provider.get_transaction_by_hash(tx_hash).await.unwrap();
+        let mut tx = provider.get_transaction_by_hash(tx_hash).await.unwrap().ok_or(eyre::eyre!("no such transactikon"))?;
         let tx_block_number: u64 =
             tx.block_number.ok_or(eyre!("transaction may still be pending"))?;
         // If the gas is not specified, we use 2 times of the gas limit from the transaction
@@ -164,7 +160,7 @@ impl ReplayArgs {
         tx.gas_price = gas_price.map(|x| x.to()).or(tx.gas_price);
 
         // get preceeding transactions in the same block
-        let block = provider.get_block(tx_block_number.into(), true).await.unwrap();
+        let block = provider.get_block(tx_block_number.into(), BlockTransactionsKind::Full).await.unwrap();
         let block = block.ok_or(eyre::eyre!("block not found"))?;
 
         config.fork_block_number = Some(tx_block_number - 1); // fork from the previous block
@@ -183,7 +179,7 @@ impl ReplayArgs {
 
         // set the state to the moment right before the transaction
         // we execute all transactions before the target transaction
-        let mut env = executor.env.clone();
+        let mut env = executor.env_with_handler_cfg().clone();
         adjust_block_env(&mut env, &block);
         env.block.number = U256::from(tx_block_number);
         let BlockTransactions::Full(txs) = block.transactions else {
@@ -191,11 +187,11 @@ impl ReplayArgs {
         };
         if !quick {
             trace!("Executing transactions before the target transaction in the same block...");
-            let txs = txs.into_iter().take_while(|tx| tx.hash != tx_hash).collect::<Vec<_>>();
-            let pb = init_progress!(txs, "replaying preceeding txs");
+            let txs = txs.into_iter().take_while(|tx: &Transaction| tx.tx_hash() != tx_hash).collect::<Vec<_>>();
+            let pb = init_progress(txs.len() as u64, "replaying preceeding txs");
             pb.set_position(0);
             for (index, tx) in txs.into_iter().enumerate() {
-                update_progress!(pb, index);
+                pb.set_position(index as u64 + 1);
 
                 // System transactions such as on L2s don't contain any pricing info so
                 // we skip them otherwise this would cause
@@ -245,10 +241,10 @@ enum ExecuteResult {
 impl ExecuteResult {
     pub fn trace_result(self) -> Result<TraceResult> {
         match self {
-            ExecuteResult::Call(r) => Ok(TraceResult::from(r)),
+            ExecuteResult::Call(r) => Ok(TraceResult::from_raw(r, TraceKind::Execution)),
             ExecuteResult::Create(r) => Ok(TraceResult::from(r)),
             ExecuteResult::Revert(e) => {
-                TraceResult::try_from(e).map_err(|e| eyre!("revert: {}", e))
+                TraceResult::try_from(Err(e)).map_err(|e| eyre!("revert: {}", e))
             }
         }
     }
@@ -287,7 +283,7 @@ fn execute_tx(
         env.cfg.disable_base_fee = true;
     }
     if tx.to.is_some() {
-        let r = executor.commit_tx_with_env(env.clone()).wrap_err_with(|| {
+        let r = executor.transact_with_env(env.clone()).wrap_err_with(|| {
             format!("Failed to execute transaction: {:?} in block {}", tx.hash, env.block.number)
         })?;
         Ok(ExecuteResult::Call(r))
@@ -306,7 +302,7 @@ mod tests {
 
     use alloy_primitives::{Address, Bytes, TxHash};
     use foundry_cli::utils::handle_traces;
-    use foundry_compilers::EvmVersion;
+    use foundry_compilers::artifacts::EvmVersion;
     use foundry_config::{figment::Figment, find_project_root_path, Config};
     use foundry_evm::opts::EvmOpts;
 
