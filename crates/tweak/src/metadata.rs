@@ -8,7 +8,9 @@ use eyre::{eyre, Result};
 use foundry_cli::opts::RpcOpts;
 use foundry_common::compile::ProjectCompiler;
 use foundry_compilers::{
-    artifacts::{output_selection::ContractOutputSelection, ConfigurableContractArtifact, StorageLayout},
+    artifacts::{
+        output_selection::ContractOutputSelection, ConfigurableContractArtifact, StorageLayout,
+    },
     ProjectCompileOutput,
 };
 use foundry_config::Config;

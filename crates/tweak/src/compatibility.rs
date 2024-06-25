@@ -12,6 +12,7 @@ use crate::metadata::ClonedProject;
 /// Check the tweak compatibility of the project with the given root.
 /// The project is compatible if:
 /// - the project's storage layout is the same as the original contract.
+///
 /// If the project is not compatible, an error is returned.
 pub fn check_storage_compatibility(cloned_project: &ClonedProject) -> eyre::Result<()> {
     // to check the storage layout compatibility, we need to download the original contract's code

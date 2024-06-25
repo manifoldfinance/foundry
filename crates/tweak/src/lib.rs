@@ -1,6 +1,6 @@
 pub mod code;
 pub mod compatibility;
-mod constant;
+mod constants;
 mod metadata;
 
 use std::collections::BTreeMap;
@@ -68,8 +68,7 @@ pub fn tweak_backend(backend: &mut Backend, tweak_data: &TweakData) -> Result<()
             B256::from_slice(&alloy_primitives::keccak256(tweaked_code.as_ref())[..])
         };
         info.code_hash = code_hash;
-        info.code =
-            Some(Bytecode::new_raw(alloy_primitives::Bytes(tweaked_code.clone().0)));
+        info.code = Some(Bytecode::new_raw(alloy_primitives::Bytes(tweaked_code.clone().0)));
         backend.insert_account_info(*tweak_address, info);
     }
 

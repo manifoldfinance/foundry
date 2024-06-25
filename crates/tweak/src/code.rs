@@ -5,14 +5,11 @@
 use alloy_primitives::{Address, Bytes, TxHash, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::{
-    serde_helpers::WithOtherFields, AnyReceiptEnvelope, BlockId, BlockTransactions, BlockTransactionsKind, Log, Transaction, TransactionReceipt
+    serde_helpers::WithOtherFields, AnyReceiptEnvelope, BlockId, BlockTransactions,
+    BlockTransactionsKind, Log, Transaction, TransactionReceipt,
 };
 use eyre::{eyre, Context, Result};
-use foundry_cli::{
-    utils::init_progress,
-    opts::RpcOpts,
-    p_println,
-};
+use foundry_cli::{opts::RpcOpts, p_println, utils::init_progress};
 use foundry_common::{
     cli_warn, is_known_system_sender, provider::ProviderBuilder, SYSTEM_TRANSACTION_TYPE,
 };
@@ -32,7 +29,7 @@ use revm::{
 };
 use std::borrow::Cow;
 
-use crate::{constant::NonStandardPrecompiled, ClonedProject};
+use crate::{constants::NonStandardPrecompiled, ClonedProject};
 
 #[derive(Debug)]
 struct TweakInspctor {
@@ -326,7 +323,10 @@ async fn prepare_backend(
             .collect()
     } else {
         vec![(
-            provider.get_transaction_by_hash(project.metadata.creation_transaction).await?.ok_or(eyre!("the transaction is not mined"))?,
+            provider
+                .get_transaction_by_hash(project.metadata.creation_transaction)
+                .await?
+                .ok_or(eyre!("the transaction is not mined"))?,
             tx_receipt,
         )]
     };
@@ -400,7 +400,8 @@ fn probe_evm_version(
 
     let non_standard_precompiled = NonStandardPrecompiled::get_precomiled_address(chain_id);
 
-    let pb = init_progress(txs.len() as u64, format!("investigating {:?}", executor.spec_id()).as_str());
+    let pb =
+        init_progress(txs.len() as u64, format!("investigating {:?}", executor.spec_id()).as_str());
     pb.set_position(0);
 
     for (index, (tx, receipt)) in txs.iter().enumerate() {

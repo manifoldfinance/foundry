@@ -6,7 +6,11 @@ use alloy_provider::Provider;
 use alloy_rpc_types::{Block, BlockTransactions, BlockTransactionsKind, Transaction};
 use eyre::{eyre, Context, Result};
 use forge::{
-    decode::decode_console_logs, executors::{DeployResult, EvmError, Executor, ExecutorBuilder, RawCallResult}, revm::primitives::EnvWithHandlerCfg, traces::TraceKind, utils::configure_tx_env
+    decode::decode_console_logs,
+    executors::{DeployResult, EvmError, Executor, ExecutorBuilder, RawCallResult},
+    revm::primitives::EnvWithHandlerCfg,
+    traces::TraceKind,
+    utils::configure_tx_env,
 };
 use foundry_cli::{
     opts::RpcOpts,
@@ -151,7 +155,11 @@ impl ReplayArgs {
         .build()?;
 
         // get transactiond data
-        let mut tx = provider.get_transaction_by_hash(tx_hash).await.unwrap().ok_or(eyre::eyre!("no such transactikon"))?;
+        let mut tx = provider
+            .get_transaction_by_hash(tx_hash)
+            .await
+            .unwrap()
+            .ok_or(eyre::eyre!("no such transactikon"))?;
         let tx_block_number: u64 =
             tx.block_number.ok_or(eyre!("transaction may still be pending"))?;
         // If the gas is not specified, we use 2 times of the gas limit from the transaction
@@ -160,7 +168,8 @@ impl ReplayArgs {
         tx.gas_price = gas_price.map(|x| x.to()).or(tx.gas_price);
 
         // get preceeding transactions in the same block
-        let block = provider.get_block(tx_block_number.into(), BlockTransactionsKind::Full).await.unwrap();
+        let block =
+            provider.get_block(tx_block_number.into(), BlockTransactionsKind::Full).await.unwrap();
         let block = block.ok_or(eyre::eyre!("block not found"))?;
 
         config.fork_block_number = Some(tx_block_number - 1); // fork from the previous block
@@ -187,7 +196,10 @@ impl ReplayArgs {
         };
         if !quick {
             trace!("Executing transactions before the target transaction in the same block...");
-            let txs = txs.into_iter().take_while(|tx: &Transaction| tx.tx_hash() != tx_hash).collect::<Vec<_>>();
+            let txs = txs
+                .into_iter()
+                .take_while(|tx: &Transaction| tx.tx_hash() != tx_hash)
+                .collect::<Vec<_>>();
             let pb = init_progress(txs.len() as u64, "replaying preceeding txs");
             pb.set_position(0);
             for (index, tx) in txs.into_iter().enumerate() {
@@ -241,19 +253,17 @@ enum ExecuteResult {
 impl ExecuteResult {
     pub fn trace_result(self) -> Result<TraceResult> {
         match self {
-            ExecuteResult::Call(r) => Ok(TraceResult::from_raw(r, TraceKind::Execution)),
-            ExecuteResult::Create(r) => Ok(TraceResult::from(r)),
-            ExecuteResult::Revert(e) => {
-                TraceResult::try_from(Err(e)).map_err(|e| eyre!("revert: {}", e))
-            }
+            Self::Call(r) => Ok(TraceResult::from_raw(r, TraceKind::Execution)),
+            Self::Create(r) => Ok(TraceResult::from(r)),
+            Self::Revert(e) => TraceResult::try_from(Err(e)).map_err(|e| eyre!("revert: {}", e)),
         }
     }
 
     pub fn console_logs(&self) -> Vec<String> {
         let raw_logs = match self {
-            ExecuteResult::Call(r) => &r.logs,
-            ExecuteResult::Create(r) => &r.raw.logs,
-            ExecuteResult::Revert(EvmError::Execution(e)) => &e.raw.logs,
+            Self::Call(r) => &r.logs,
+            Self::Create(r) => &r.raw.logs,
+            Self::Revert(EvmError::Execution(e)) => &e.raw.logs,
             _ => return vec![],
         };
         decode_console_logs(raw_logs)

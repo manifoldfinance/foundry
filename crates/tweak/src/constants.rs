@@ -10,7 +10,7 @@ pub enum NonStandardPrecompiled {
 
 impl NonStandardPrecompiled {
     /// Binance Smart Chain non-standard precompiled contracts
-    /// Collected from https://docs.bnbchain.org/docs/learn/system-contract/
+    /// Collected from <https://docs.bnbchain.org/docs/learn/system-contract/>
     pub const BSC_NON_STANDARD_PRECOMPILED: NonStandardPrecompiled =
         NonStandardPrecompiled::BinanceSmartChain([
             "0x0000000000000000000000000000000000001000",
