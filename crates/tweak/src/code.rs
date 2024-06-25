@@ -541,7 +541,8 @@ mod tests {
             "0x8B3D32cf2bb4d0D16656f4c0b04Fa546274f1545",
             "0x79820495643caf5a1e7e96578361c9ddba0e0735cd684ada7450254f6fd58f51",
         );
-        let rpc = RpcOpts { url: Some("http://localhost:8545".to_string()), ..Default::default() };
+        let rpc_url = std::env::var("ETH_RPC_URL").unwrap_or("http://localhost:8545".to_string());
+        let rpc = RpcOpts { url: Some(rpc_url), ..Default::default() };
 
         let tweaked_code = format!(
             "{:?}",
@@ -562,7 +563,8 @@ mod tests {
             "0x6B880d3B1FA2475C30Dc583726c56B4aFc66bD0b",
             "0x3812e48763d3631516206fb878007ed126223d5c31e8cc433c79659b8afbbf24",
         );
-        let rpc = RpcOpts { url: Some("http://localhost:8545".to_string()), ..Default::default() };
+        let rpc_url = std::env::var("ETH_RPC_URL").unwrap_or("http://localhost:8545".to_string());
+        let rpc = RpcOpts { url: Some(rpc_url), ..Default::default() };
 
         let tweaked_code = format!(
             "{:?}",

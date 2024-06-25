@@ -318,7 +318,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_replay_tx_hash() {
-        let rpc = std::env::var("ETH_RPC_URL").unwrap();
+        let rpc = std::env::var("ETH_RPC_URL").unwrap_or("http://localhost:8545".to_string());
         let tx: TxHash =
             "0xbfa440cd7df20320fe8400e4f61113379a018e3904eef7cf6085cf6cf22bcdb9".parse().unwrap();
 
@@ -343,7 +343,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_replay_tx_hash_with_tweak() {
-        let rpc = std::env::var("ETH_RPC_URL").unwrap();
+        let rpc = std::env::var("ETH_RPC_URL").unwrap_or("http://localhost:8545".to_string());
         let tx: TxHash =
             "0xbfa440cd7df20320fe8400e4f61113379a018e3904eef7cf6085cf6cf22bcdb9".parse().unwrap();
         let factory: Address = "0x8d1fA935E5e8a5440c9Efc96C0d9fF387eBb179B".parse().unwrap();
