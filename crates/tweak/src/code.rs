@@ -276,7 +276,10 @@ async fn prepare_backend(
 
     // prepare the RPC provider
     let provider = ProviderBuilder::new(rpc_url)
-        .chain(NamedChain::try_from(project.metadata.chain_id)?)
+        .chain(
+            NamedChain::try_from(project.metadata.chain_id)
+                .map_err(|_| eyre!("invalid chain id"))?,
+        )
         .build()?;
 
     // get block number
@@ -350,7 +353,8 @@ async fn prepare_backend(
 
     // a loop to probe the proper EVM version
     let mut spec_id = config.evm_spec_id();
-    let chain_id = NamedChain::try_from(project.metadata.chain_id)?;
+    let chain_id =
+        NamedChain::try_from(project.metadata.chain_id).map_err(|_| eyre!("invalid chain id"))?;
 
     if chain_id == NamedChain::BinanceSmartChain || chain_id == NamedChain::BinanceSmartChainTestnet
     {

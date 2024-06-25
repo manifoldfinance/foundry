@@ -316,17 +316,16 @@ mod tests {
     use foundry_config::{figment::Figment, find_project_root_path, Config};
     use foundry_evm::opts::EvmOpts;
 
-    const RPC: &str = "http://localhost:8545";
-
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_replay_tx_hash() {
+        let rpc = std::env::var("ETH_RPC_URL").unwrap();
         let tx: TxHash =
             "0xbfa440cd7df20320fe8400e4f61113379a018e3904eef7cf6085cf6cf22bcdb9".parse().unwrap();
 
         let figment = Config::figment_with_root(find_project_root_path(None).unwrap());
         let evm_opts = figment.extract::<EvmOpts>().unwrap();
         let mut config = Config::try_from(figment).unwrap().sanitized();
-        config.eth_rpc_url = Some(RPC.to_string());
+        config.eth_rpc_url = Some(rpc);
         config.evm_version = EvmVersion::Shanghai;
 
         let args =
@@ -344,6 +343,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_replay_tx_hash_with_tweak() {
+        let rpc = std::env::var("ETH_RPC_URL").unwrap();
         let tx: TxHash =
             "0xbfa440cd7df20320fe8400e4f61113379a018e3904eef7cf6085cf6cf22bcdb9".parse().unwrap();
         let factory: Address = "0x8d1fA935E5e8a5440c9Efc96C0d9fF387eBb179B".parse().unwrap();
@@ -352,7 +352,7 @@ mod tests {
         let mut config = Config::default();
         let figment: Figment = config.clone().into();
         let evm_opts = figment.extract::<EvmOpts>().unwrap();
-        config.eth_rpc_url = Some(RPC.to_string());
+        config.eth_rpc_url = Some(rpc);
 
         let args =
             super::ReplayArgs { quick: false, gas: None, gas_price: None, ..Default::default() };
