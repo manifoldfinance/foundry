@@ -154,6 +154,7 @@ impl ClonedProject {
 /// cloned contract. This struct is the twin of the `CloneMetadata` struct in the `clone` command of
 /// `forge` crate.
 #[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CloneMetadata {
     /// The path to the source file that contains the contract declaration.
     /// The path is relative to the root directory of the project.
