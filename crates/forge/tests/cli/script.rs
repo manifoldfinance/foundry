@@ -1,18 +1,19 @@
 //! Contains various tests related to `forge script`.
 
 use crate::constants::TEMPLATE_CONTRACT;
-use alloy_primitives::{address, hex, Address, Bytes};
-use anvil::{spawn, NodeConfig};
+use alloy_hardforks::EthereumHardfork;
+use alloy_primitives::{Address, Bytes, address, hex};
+use anvil::{NodeConfig, spawn};
 use forge_script_sequence::ScriptSequence;
 use foundry_test_utils::{
-    rpc,
+    ScriptOutcome, ScriptTester,
+    rpc::{self, next_http_archive_rpc_url},
     snapbox::IntoData,
     util::{OTHER_SOLC_VERSION, SOLC_VERSION},
-    ScriptOutcome, ScriptTester,
 };
 use regex::Regex;
 use serde_json::Value;
-use std::{env, path::PathBuf, str::FromStr};
+use std::{env, fs, path::PathBuf};
 
 // Tests that fork cheat codes can be used in script
 forgetest_init!(
@@ -152,7 +153,7 @@ forgetest_async!(assert_exit_code_error_on_failure_script, |prj, cmd| {
 
     // run command and assert error exit code
     cmd.assert_failure().stderr_eq(str![[r#"
-Error: script failed: revert: failed
+Error: script failed: failed
 
 "#]]);
 });
@@ -168,7 +169,7 @@ forgetest_async!(assert_exit_code_error_on_failure_script_with_json, |prj, cmd| 
 
     // run command and assert error exit code
     cmd.assert_failure().stderr_eq(str![[r#"
-Error: script failed: revert: failed
+Error: script failed: failed
 
 "#]]);
 });
@@ -228,12 +229,12 @@ Compiler run successful!
 Traces:
   [..] DeployScript::run()
     ├─ [0] VM::startBroadcast()
-    │   └─ ← [Return] 
+    │   └─ ← [Return]
     ├─ [..] → new GasWaster@[..]
-    │   └─ ← [Return] 221 bytes of code
+    │   └─ ← [Return] 415 bytes of code
     ├─ [..] GasWaster::wasteGas(200000 [2e5])
-    │   └─ ← [Stop] 
-    └─ ← [Stop] 
+    │   └─ ← [Stop]
+    └─ ← [Stop]
 
 
 Script ran successfully.
@@ -242,11 +243,11 @@ Script ran successfully.
 ==========================
 Simulated On-chain Traces:
 
-  [44291] → new GasWaster@[..]
-    └─ ← [Return] 221 bytes of code
+  [..] → new GasWaster@[..]
+    └─ ← [Return] 415 bytes of code
 
-  [224] GasWaster::wasteGas(200000 [2e5])
-    └─ ← [Stop] 
+  [..] GasWaster::wasteGas(200000 [2e5])
+    └─ ← [Stop]
 
 
 ==========================
@@ -334,12 +335,12 @@ Warning (2018): Function state mutability can be restricted to view
 Traces:
   [..] DeployScript::run()
     ├─ [0] VM::startBroadcast()
-    │   └─ ← [Return] 
+    │   └─ ← [Return]
     ├─ [..] → new GasWaster@[..]
-    │   └─ ← [Return] 221 bytes of code
+    │   └─ ← [Return] 415 bytes of code
     ├─ [..] GasWaster::wasteGas(200000 [2e5])
-    │   └─ ← [Stop] 
-    └─ ← [Stop] 
+    │   └─ ← [Stop]
+    └─ ← [Stop]
 
 
 Script ran successfully.
@@ -348,11 +349,11 @@ Script ran successfully.
 ==========================
 Simulated On-chain Traces:
 
-  [44291] → new GasWaster@[..]
-    └─ ← [Return] 221 bytes of code
+  [..] → new GasWaster@[..]
+    └─ ← [Return] 415 bytes of code
 
-  [224] GasWaster::wasteGas(200000 [2e5])
-    └─ ← [Stop] 
+  [..] GasWaster::wasteGas(200000 [2e5])
+    └─ ← [Stop]
 
 
 ==========================
@@ -518,10 +519,10 @@ Compiler run successful!
 Traces:
   [..] DeployScript::run()
     ├─ [0] VM::startBroadcast()
-    │   └─ ← [Return] 
+    │   └─ ← [Return]
     ├─ [..] → new HashChecker@[..]
-    │   └─ ← [Return] 368 bytes of code
-    └─ ← [Stop] 
+    │   └─ ← [Return] 718 bytes of code
+    └─ ← [Stop]
 
 
 Script ran successfully.
@@ -598,58 +599,58 @@ Compiler run successful!
 Traces:
   [..] RunScript::run()
     ├─ [0] VM::startBroadcast()
-    │   └─ ← [Return] 
+    │   └─ ← [Return]
     ├─ [0] VM::roll([..])
-    │   └─ ← [Return] 
+    │   └─ ← [Return]
     ├─ [0] VM::roll([..])
-    │   └─ ← [Return] 
+    │   └─ ← [Return]
     ├─ [..] [..]::update()
-    │   └─ ← [Stop] 
+    │   └─ ← [Stop]
     ├─ [..] [..]::checkLastHash() [staticcall]
-    │   └─ ← [Stop] 
+    │   └─ ← [Stop]
     ├─ [0] VM::roll([..])
-    │   └─ ← [Return] 
+    │   └─ ← [Return]
     ├─ [..] [..]::update()
-    │   └─ ← [Stop] 
+    │   └─ ← [Stop]
     ├─ [..] [..]::checkLastHash() [staticcall]
-    │   └─ ← [Stop] 
+    │   └─ ← [Stop]
     ├─ [0] VM::roll([..])
-    │   └─ ← [Return] 
+    │   └─ ← [Return]
     ├─ [..] [..]::update()
-    │   └─ ← [Stop] 
+    │   └─ ← [Stop]
     ├─ [..] [..]::checkLastHash() [staticcall]
-    │   └─ ← [Stop] 
+    │   └─ ← [Stop]
     ├─ [0] VM::roll([..])
-    │   └─ ← [Return] 
+    │   └─ ← [Return]
     ├─ [..] [..]::update()
-    │   └─ ← [Stop] 
+    │   └─ ← [Stop]
     ├─ [..] [..]::checkLastHash() [staticcall]
-    │   └─ ← [Stop] 
+    │   └─ ← [Stop]
     ├─ [0] VM::roll([..])
-    │   └─ ← [Return] 
+    │   └─ ← [Return]
     ├─ [..] [..]::update()
-    │   └─ ← [Stop] 
+    │   └─ ← [Stop]
     ├─ [..] [..]::checkLastHash() [staticcall]
-    │   └─ ← [Stop] 
+    │   └─ ← [Stop]
     ├─ [0] VM::roll([..])
-    │   └─ ← [Return] 
+    │   └─ ← [Return]
     ├─ [..] [..]::update()
-    │   └─ ← [Stop] 
+    │   └─ ← [Stop]
     ├─ [..] [..]::checkLastHash() [staticcall]
-    │   └─ ← [Stop] 
+    │   └─ ← [Stop]
     ├─ [0] VM::roll([..])
-    │   └─ ← [Return] 
+    │   └─ ← [Return]
     ├─ [..] [..]::update()
-    │   └─ ← [Stop] 
+    │   └─ ← [Stop]
     ├─ [..] [..]::checkLastHash() [staticcall]
-    │   └─ ← [Stop] 
+    │   └─ ← [Stop]
     ├─ [0] VM::roll([..])
-    │   └─ ← [Return] 
+    │   └─ ← [Return]
     ├─ [..] [..]::update()
-    │   └─ ← [Stop] 
+    │   └─ ← [Stop]
     ├─ [..] [..]::checkLastHash() [staticcall]
-    │   └─ ← [Stop] 
-    └─ ← [Stop] 
+    │   └─ ← [Stop]
+    └─ ← [Stop]
 
 
 Script ran successfully.
@@ -702,13 +703,13 @@ forgetest_async!(can_deploy_script_private_key, |prj, cmd| {
     let mut tester = ScriptTester::new_broadcast(cmd, &handle.http_endpoint(), prj.root());
 
     tester
-        .load_addresses(&[Address::from_str("0x90F79bf6EB2c4f870365E785982E1f101E93b906").unwrap()])
+        .load_addresses(&[address!("0x90F79bf6EB2c4f870365E785982E1f101E93b906")])
         .await
         .add_sig("BroadcastTest", "deployPrivateKey()")
         .simulate(ScriptOutcome::OkSimulation)
         .broadcast(ScriptOutcome::OkBroadcast)
         .assert_nonce_increment_addresses(&[(
-            Address::from_str("0x90F79bf6EB2c4f870365E785982E1f101E93b906").unwrap(),
+            address!("0x90F79bf6EB2c4f870365E785982E1f101E93b906"),
             3,
         )])
         .await;
@@ -731,13 +732,13 @@ forgetest_async!(can_deploy_script_remember_key, |prj, cmd| {
     let mut tester = ScriptTester::new_broadcast(cmd, &handle.http_endpoint(), prj.root());
 
     tester
-        .load_addresses(&[Address::from_str("0x90F79bf6EB2c4f870365E785982E1f101E93b906").unwrap()])
+        .load_addresses(&[address!("0x90F79bf6EB2c4f870365E785982E1f101E93b906")])
         .await
         .add_sig("BroadcastTest", "deployRememberKey()")
         .simulate(ScriptOutcome::OkSimulation)
         .broadcast(ScriptOutcome::OkBroadcast)
         .assert_nonce_increment_addresses(&[(
-            Address::from_str("0x90F79bf6EB2c4f870365E785982E1f101E93b906").unwrap(),
+            address!("0x90F79bf6EB2c4f870365E785982E1f101E93b906"),
             2,
         )])
         .await;
@@ -749,7 +750,7 @@ forgetest_async!(can_deploy_script_remember_key_and_resume, |prj, cmd| {
 
     tester
         .add_deployer(0)
-        .load_addresses(&[Address::from_str("0x90F79bf6EB2c4f870365E785982E1f101E93b906").unwrap()])
+        .load_addresses(&[address!("0x90F79bf6EB2c4f870365E785982E1f101E93b906")])
         .await
         .add_sig("BroadcastTest", "deployRememberKeyResume()")
         .simulate(ScriptOutcome::OkSimulation)
@@ -759,7 +760,7 @@ forgetest_async!(can_deploy_script_remember_key_and_resume, |prj, cmd| {
         .await
         .run(ScriptOutcome::OkBroadcast)
         .assert_nonce_increment_addresses(&[(
-            Address::from_str("0x90F79bf6EB2c4f870365E785982E1f101E93b906").unwrap(),
+            address!("0x90F79bf6EB2c4f870365E785982E1f101E93b906"),
             1,
         )])
         .await
@@ -855,7 +856,7 @@ forgetest_async!(can_deploy_with_create2, |prj, cmd| {
 forgetest_async!(can_deploy_with_custom_create2, |prj, cmd| {
     let (api, handle) = spawn(NodeConfig::test()).await;
     let mut tester = ScriptTester::new_broadcast(cmd, &handle.http_endpoint(), prj.root());
-    let create2 = Address::from_str("0x0000000000000000000000000000000000b4956c").unwrap();
+    let create2 = address!("0x0000000000000000000000000000000000b4956c");
 
     // Prepare CREATE2 Deployer
     api.anvil_set_code(
@@ -881,7 +882,7 @@ forgetest_async!(can_deploy_with_custom_create2, |prj, cmd| {
 forgetest_async!(can_deploy_with_custom_create2_notmatched_bytecode, |prj, cmd| {
     let (api, handle) = spawn(NodeConfig::test()).await;
     let mut tester = ScriptTester::new_broadcast(cmd, &handle.http_endpoint(), prj.root());
-    let create2 = Address::from_str("0x0000000000000000000000000000000000b4956c").unwrap();
+    let create2 = address!("0x0000000000000000000000000000000000b4956c");
 
     // Prepare CREATE2 Deployer
     api.anvil_set_code(
@@ -901,10 +902,10 @@ forgetest_async!(can_deploy_with_custom_create2_notmatched_bytecode, |prj, cmd| 
         .broadcast(ScriptOutcome::ScriptFailed);
 });
 
-forgetest_async!(canot_deploy_with_nonexist_create2, |prj, cmd| {
+forgetest_async!(cannot_deploy_with_nonexist_create2, |prj, cmd| {
     let (_api, handle) = spawn(NodeConfig::test()).await;
     let mut tester = ScriptTester::new_broadcast(cmd, &handle.http_endpoint(), prj.root());
-    let create2 = Address::from_str("0x0000000000000000000000000000000000b4956c").unwrap();
+    let create2 = address!("0x0000000000000000000000000000000000b4956c");
 
     tester
         .add_deployer(0)
@@ -974,7 +975,7 @@ forgetest_async!(check_broadcast_log, |prj, cmd| {
     let mut tester = ScriptTester::new_broadcast(cmd, &handle.http_endpoint(), prj.root());
 
     // Prepare CREATE2 Deployer
-    let addr = Address::from_str("0x4e59b44847b379578588920ca78fbf26c0b4956c").unwrap();
+    let addr = address!("0x4e59b44847b379578588920ca78fbf26c0b4956c");
     let code = hex::decode("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3").expect("Could not decode create2 deployer init_code").into();
     api.anvil_set_code(addr, code).await.unwrap();
 
@@ -1375,7 +1376,7 @@ forgetest_async!(does_script_override_correctly, |prj, cmd| {
     tester.add_sig("CheckOverrides", "run()").simulate(ScriptOutcome::OkNoEndpoint);
 });
 
-forgetest_async!(assert_tx_origin_is_not_overritten, |prj, cmd| {
+forgetest_async!(assert_tx_origin_is_not_overwritten, |prj, cmd| {
     cmd.args(["init", "--force"])
         .arg(prj.root())
         .assert_success()
@@ -1920,10 +1921,6 @@ contract SimpleScript is Script {
 
 // Asserts that the script runs with expected non-output using `--quiet` flag
 forgetest_async!(adheres_to_json_flag, |prj, cmd| {
-    if cfg!(feature = "isolate-by-default") {
-        return;
-    }
-
     foundry_test_utils::util::initialize(prj.root());
     prj.add_script(
         "Foo",
@@ -1956,9 +1953,9 @@ contract SimpleScript is Script {
     ])
     .assert_success()
     .stdout_eq(str![[r#"
-{"logs":[],"returns":{"success":{"internal_type":"bool","value":"true"}},"success":true,"raw_logs":[],"traces":[["Deployment",{"arena":[{"parent":null,"children":[],"idx":0,"trace":{"depth":0,"success":true,"caller":"0x1804c8ab1f12e6bbf3894d4083f33e07309d1f38","address":"0x5b73c5498c1e3b4dba84de0f1833c4a029d90519","maybe_precompile":false,"selfdestruct_address":null,"selfdestruct_refund_target":null,"selfdestruct_transferred_value":null,"kind":"CREATE","value":"0x0","data":"0x6080604052600c805462ff00ff191662010001179055348015601f575f5ffd5b506101568061002d5f395ff3fe608060405234801561000f575f5ffd5b5060043610610034575f3560e01c8063c040622614610038578063f8ccbf4714610054575b5f5ffd5b610040610067565b604051901515815260200160405180910390f35b600c546100409062010000900460ff1681565b5f7f885cb69240a935d632d79c317109709ecfa91a80626ff3989d68f67f5b1dd12d5f1c6001600160a01b0316637fb5297f6040518163ffffffff1660e01b81526004015f604051808303815f87803b1580156100c2575f5ffd5b505af11580156100d4573d5f5f3e3d5ffd5b50506040515f925090508181818181805af19150503d805f8114610113576040519150601f19603f3d011682016040523d82523d5f602084013e610118565b606091505b50909291505056fea264697066735822122060ba6332e526de9b6bc731fb4682b44e42845196324ec33068982984d700cdd964736f6c634300081b0033","output":"0x608060405234801561000f575f5ffd5b5060043610610034575f3560e01c8063c040622614610038578063f8ccbf4714610054575b5f5ffd5b610040610067565b604051901515815260200160405180910390f35b600c546100409062010000900460ff1681565b5f7f885cb69240a935d632d79c317109709ecfa91a80626ff3989d68f67f5b1dd12d5f1c6001600160a01b0316637fb5297f6040518163ffffffff1660e01b81526004015f604051808303815f87803b1580156100c2575f5ffd5b505af11580156100d4573d5f5f3e3d5ffd5b50506040515f925090508181818181805af19150503d805f8114610113576040519150601f19603f3d011682016040523d82523d5f602084013e610118565b606091505b50909291505056fea264697066735822122060ba6332e526de9b6bc731fb4682b44e42845196324ec33068982984d700cdd964736f6c634300081b0033","gas_used":90639,"gas_limit":1073682810,"status":"Return","steps":[],"decoded":{"label":null,"return_data":null,"call_data":null}},"logs":[],"ordering":[]}]}],["Execution",{"arena":[{"parent":null,"children":[1,2],"idx":0,"trace":{"depth":0,"success":true,"caller":"0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266","address":"0x5b73c5498c1e3b4dba84de0f1833c4a029d90519","maybe_precompile":null,"selfdestruct_address":null,"selfdestruct_refund_target":null,"selfdestruct_transferred_value":null,"kind":"CALL","value":"0x0","data":"0xc0406226","output":"0x0000000000000000000000000000000000000000000000000000000000000001","gas_used":3214,"gas_limit":1073720760,"status":"Return","steps":[],"decoded":{"label":null,"return_data":null,"call_data":null}},"logs":[],"ordering":[{"Call":0},{"Call":1}]},{"parent":0,"children":[],"idx":1,"trace":{"depth":1,"success":true,"caller":"0x5b73c5498c1e3b4dba84de0f1833c4a029d90519","address":"0x7109709ecfa91a80626ff3989d68f67f5b1dd12d","maybe_precompile":null,"selfdestruct_address":null,"selfdestruct_refund_target":null,"selfdestruct_transferred_value":null,"kind":"CALL","value":"0x0","data":"0x7fb5297f","output":"0x","gas_used":0,"gas_limit":1056940983,"status":"Return","steps":[],"decoded":{"label":null,"return_data":null,"call_data":null}},"logs":[],"ordering":[]},{"parent":0,"children":[],"idx":2,"trace":{"depth":1,"success":true,"caller":"0x5b73c5498c1e3b4dba84de0f1833c4a029d90519","address":"0x0000000000000000000000000000000000000000","maybe_precompile":null,"selfdestruct_address":null,"selfdestruct_refund_target":null,"selfdestruct_transferred_value":null,"kind":"CALL","value":"0x0","data":"0x","output":"0x","gas_used":0,"gas_limit":1056940820,"status":"Stop","steps":[],"decoded":{"label":null,"return_data":null,"call_data":null}},"logs":[],"ordering":[]}]}]],"gas_used":24278,"labeled_addresses":{},"returned":"0x0000000000000000000000000000000000000000000000000000000000000001","address":null}
-{"chain":31337,"estimated_gas_price":"2.000000001","estimated_total_gas_used":29005,"estimated_amount_required":"0.000058010000029005"}
-{"chain":"anvil-hardhat","status":"success","tx_hash":"0x4f78afe915fceb282c7625a68eb350bc0bf78acb59ad893e5c62b710a37f3156","contract_address":null,"block_number":1,"gas_used":21000,"gas_price":1000000001}
+{"logs":[],"returns":{"success":{"internal_type":"bool","value":"true"}},"success":true,"raw_logs":[],"traces":[["Deployment",{"arena":[{"parent":null,"children":[],"idx":0,"trace":{"depth":0,"success":true,"caller":"0x1804c8ab1f12e6bbf3894d4083f33e07309d1f38","address":"0x5b73c5498c1e3b4dba84de0f1833c4a029d90519","maybe_precompile":false,"selfdestruct_address":null,"selfdestruct_refund_target":null,"selfdestruct_transferred_value":null,"kind":"CREATE","value":"0x0","data":"[..]","output":"[..]","gas_used":"{...}","gas_limit":"{...}","status":"Return","steps":[],"decoded":{"label":"SimpleScript","return_data":null,"call_data":null}},"logs":[],"ordering":[]}]}],["Execution",{"arena":[{"parent":null,"children":[1,2],"idx":0,"trace":{"depth":0,"success":true,"caller":"0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266","address":"0x5b73c5498c1e3b4dba84de0f1833c4a029d90519","maybe_precompile":null,"selfdestruct_address":null,"selfdestruct_refund_target":null,"selfdestruct_transferred_value":null,"kind":"CALL","value":"0x0","data":"0xc0406226","output":"0x0000000000000000000000000000000000000000000000000000000000000001","gas_used":"{...}","gas_limit":1073720760,"status":"Return","steps":[],"decoded":{"label":"SimpleScript","return_data":"true","call_data":{"signature":"run()","args":[]}}},"logs":[],"ordering":[{"Call":0},{"Call":1}]},{"parent":0,"children":[],"idx":1,"trace":{"depth":1,"success":true,"caller":"0x5b73c5498c1e3b4dba84de0f1833c4a029d90519","address":"0x7109709ecfa91a80626ff3989d68f67f5b1dd12d","maybe_precompile":null,"selfdestruct_address":null,"selfdestruct_refund_target":null,"selfdestruct_transferred_value":null,"kind":"CALL","value":"0x0","data":"0x7fb5297f","output":"0x","gas_used":"{...}","gas_limit":1056940999,"status":"Return","steps":[],"decoded":{"label":"VM","return_data":null,"call_data":{"signature":"startBroadcast()","args":[]}}},"logs":[],"ordering":[]},{"parent":0,"children":[],"idx":2,"trace":{"depth":1,"success":true,"caller":"0x5b73c5498c1e3b4dba84de0f1833c4a029d90519","address":"0x0000000000000000000000000000000000000000","maybe_precompile":null,"selfdestruct_address":null,"selfdestruct_refund_target":null,"selfdestruct_transferred_value":null,"kind":"CALL","value":"0x0","data":"0x","output":"0x","gas_used":"{...}","gas_limit":1056940650,"status":"Stop","steps":[],"decoded":{"label":null,"return_data":null,"call_data":null}},"logs":[],"ordering":[]}]}]],"gas_used":"{...}","labeled_addresses":{},"returned":"0x0000000000000000000000000000000000000000000000000000000000000001","address":null}
+{"chain":31337,"estimated_gas_price":"{...}","estimated_total_gas_used":"{...}","estimated_amount_required":"{...}","token_symbol":"ETH"}
+{"chain":"anvil-hardhat","status":"success","tx_hash":"0x4f78afe915fceb282c7625a68eb350bc0bf78acb59ad893e5c62b710a37f3156","contract_address":null,"block_number":1,"gas_used":"{...}","gas_price":"{...}"}
 {"status":"success","transactions":"[..]/broadcast/Foo.sol/31337/run-latest.json","sensitive":"[..]/cache/Foo.sol/31337/run-latest.json"}
 
 "#]].is_jsonlines());
@@ -2248,11 +2245,12 @@ ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
 
 "#]]);
 
-    assert!(!api
-        .get_code(address!("4e59b44847b379578588920cA78FbF26c0B4956C"), Default::default())
-        .await
-        .unwrap()
-        .is_empty());
+    assert!(
+        !api.get_code(address!("0x4e59b44847b379578588920cA78FbF26c0B4956C"), Default::default())
+            .await
+            .unwrap()
+            .is_empty()
+    );
 });
 
 forgetest_init!(can_get_script_wallets, |prj, cmd| {
@@ -2295,7 +2293,7 @@ Script ran successfully.
 "#]]);
 });
 
-forgetest_init!(can_remeber_keys, |prj, cmd| {
+forgetest_init!(can_remember_keys, |prj, cmd| {
     let script = prj
         .add_source(
             "Foo",
@@ -2370,14 +2368,14 @@ Compiler run successful!
 Traces:
   [..] SimpleScript::run()
     ├─ [0] VM::startBroadcast()
-    │   └─ ← [Return] 
+    │   └─ ← [Return]
     ├─ [..] → new A@0x5b73C5498c1E3b4dbA84de0F1833c4a029d90519
-    │   └─ ← [Return] 116 bytes of code
+    │   └─ ← [Return] 175 bytes of code
     ├─ [..] → new B@0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
-    │   ├─ [145] A::getValue() [staticcall]
+    │   ├─ [..] A::getValue() [staticcall]
     │   │   └─ ← [Return] 100
     │   └─ ← [Return] 62 bytes of code
-    └─ ← [Stop] 
+    └─ ← [Stop]
 
 
 Script ran successfully.
@@ -2386,11 +2384,11 @@ Script ran successfully.
 ==========================
 Simulated On-chain Traces:
 
-  [23273] → new A@0x5b73C5498c1E3b4dbA84de0F1833c4a029d90519
-    └─ ← [Return] 116 bytes of code
+  [..] → new A@0x5b73C5498c1E3b4dbA84de0F1833c4a029d90519
+    └─ ← [Return] 175 bytes of code
 
-  [15662] → new B@0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
-    ├─ [145] A::getValue() [staticcall]
+  [..] → new B@0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
+    ├─ [..] A::getValue() [staticcall]
     │   └─ ← [Return] 100
     └─ ← [Return] 62 bytes of code
 ...
@@ -2442,4 +2440,572 @@ contract ContractScript is Script {
 
     assert_eq!(sequence.transactions.len(), 2);
     assert_eq!(sequence.transactions[1].additional_contracts.len(), 1);
+});
+
+// <https://github.com/foundry-rs/foundry/issues/9661>
+forgetest_async!(should_set_correct_sender_nonce_via_cli, |prj, cmd| {
+    foundry_test_utils::util::initialize(prj.root());
+    prj.add_script(
+        "MyScript.s.sol",
+        r#"
+        import {Script, console} from "forge-std/Script.sol";
+
+    contract MyScript is Script {
+        function run() public view {
+            console.log("sender nonce", vm.getNonce(msg.sender));
+        }
+    }
+    "#,
+    )
+    .unwrap();
+
+    let rpc_url = next_http_archive_rpc_url();
+
+    let fork_bn = 21614115;
+
+    cmd.forge_fuse()
+        .args([
+            "script",
+            "MyScript",
+            "--sender",
+            "0x4838B106FCe9647Bdf1E7877BF73cE8B0BAD5f97",
+            "--fork-block-number",
+            &fork_bn.to_string(),
+            "--rpc-url",
+            &rpc_url,
+        ])
+        .assert_success()
+        .stdout_eq(str![[r#"[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+...
+== Logs ==
+  sender nonce 1124703[..]"#]]);
+});
+
+forgetest_async!(dryrun_without_broadcast, |prj, cmd| {
+    let (_api, handle) = spawn(NodeConfig::test()).await;
+
+    foundry_test_utils::util::initialize(prj.root());
+    prj.add_source(
+        "Foo",
+        r#"
+import "forge-std/Script.sol";
+
+contract Called {
+    event log_string(string);
+    uint256 public x;
+    uint256 public y;
+    function run(uint256 _x, uint256 _y) external {
+        x = _x;
+        y = _y;
+        emit log_string("script ran");
+    }
+}
+
+contract DryRunTest is Script {
+    function run() external {
+        vm.startBroadcast();
+        Called called = new Called();
+        called.run(123, 456);
+    }
+}
+   "#,
+    )
+    .unwrap();
+
+    cmd.arg("script")
+        .args([
+            "DryRunTest",
+            "--private-key",
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+            "--rpc-url",
+            &handle.http_endpoint(),
+            "-vvvv",
+        ])
+        .assert_success()
+        .stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+Traces:
+  [..] DryRunTest::run()
+    ├─ [0] VM::startBroadcast()
+    │   └─ ← [Return]
+    ├─ [..] → new Called@0x5FbDB2315678afecb367f032d93F642f64180aa3
+    │   └─ ← [Return] 567 bytes of code
+    ├─ [..] Called::run(123, 456)
+    │   ├─ emit log_string(val: "script ran")
+    │   └─ ← [Stop]
+    └─ ← [Stop]
+
+
+Script ran successfully.
+
+== Logs ==
+  script ran
+
+## Setting up 1 EVM.
+==========================
+Simulated On-chain Traces:
+
+  [113557] → new Called@0x5FbDB2315678afecb367f032d93F642f64180aa3
+    └─ ← [Return] 567 bytes of code
+
+  [46595] Called::run(123, 456)
+    ├─ emit log_string(val: "script ran")
+    └─ ← [Stop]
+
+
+==========================
+
+Chain 31337
+
+[ESTIMATED_GAS_PRICE]
+
+[ESTIMATED_TOTAL_GAS_USED]
+
+[ESTIMATED_AMOUNT_REQUIRED]
+
+==========================
+
+=== Transactions that will be broadcast ===
+
+
+Chain 31337
+
+### Transaction 1 ###
+
+accessList           []
+chainId              31337
+gasLimit             [..]
+gasPrice             
+input                [..]
+maxFeePerBlobGas     
+maxFeePerGas         
+maxPriorityFeePerGas 
+nonce                0
+to                   
+type                 0
+value                0
+
+### Transaction 2 ###
+
+accessList           []
+chainId              31337
+gasLimit             93856
+gasPrice             
+input                0x7357f5d2000000000000000000000000000000000000000000000000000000000000007b00000000000000000000000000000000000000000000000000000000000001c8
+maxFeePerBlobGas     
+maxFeePerGas         
+maxPriorityFeePerGas 
+nonce                1
+to                   0x5FbDB2315678afecb367f032d93F642f64180aa3
+type                 0
+value                0
+contract: Called(0x5FbDB2315678afecb367f032d93F642f64180aa3)
+data (decoded): run(uint256,uint256)(
+  123,
+  456
+)
+
+
+SIMULATION COMPLETE. To broadcast these transactions, add --broadcast and wallet configuration(s) to the previous command. See forge script --help for more.
+
+[SAVED_TRANSACTIONS]
+
+[SAVED_SENSITIVE_VALUES]
+
+
+"#]]);
+});
+
+// Tests warn when artifact source file no longer exists.
+// <https://github.com/foundry-rs/foundry/issues/9068>
+forgetest_init!(should_warn_if_artifact_source_no_longer_exists, |prj, cmd| {
+    cmd.args(["script", "script/Counter.s.sol"]).assert_success().stdout_eq(str![[r#"
+...
+Script ran successfully.
+...
+
+"#]]);
+    fs::rename(
+        prj.paths().scripts.join("Counter.s.sol"),
+        prj.paths().scripts.join("Counter1.s.sol"),
+    )
+    .unwrap();
+    cmd.forge_fuse().args(["script", "script/Counter1.s.sol"]).assert_success().stderr_eq(str![[r#"
+...
+Warning: Detected artifacts built from source files that no longer exist. Run `forge clean` to make sure builds are in sync with project files.
+ - [..]script/Counter.s.sol
+...
+
+"#]])
+        .stdout_eq(str![[r#"
+...
+Script ran successfully.
+...
+
+"#]]);
+});
+
+// Tests that script reverts if it uses `address(this)`.
+forgetest_init!(should_revert_on_address_opcode, |prj, cmd| {
+    prj.add_script(
+        "ScriptWithAddress.s.sol",
+        r#"
+        import {Script, console} from "forge-std/Script.sol";
+
+    contract ScriptWithAddress is Script {
+        function run() public view {
+            console.log("script address", address(this));
+        }
+    }
+    "#,
+    )
+    .unwrap();
+
+    cmd.arg("script").arg("ScriptWithAddress").assert_failure().stderr_eq(str![[r#"
+Error: script failed: Usage of `address(this)` detected in script contract. Script contracts are ephemeral and their addresses should not be relied upon.
+
+"#]]);
+
+    // Disable script protection.
+    prj.update_config(|config| {
+        config.script_execution_protection = false;
+    });
+    cmd.assert_success().stdout_eq(str![[r#"
+...
+Script ran successfully.
+...
+
+"#]]);
+});
+
+// Tests that script warns if no tx to broadcast.
+// <https://github.com/foundry-rs/foundry/issues/10015>
+forgetest_async!(warns_if_no_transactions_to_broadcast, |prj, cmd| {
+    let (_api, handle) = spawn(NodeConfig::test()).await;
+    foundry_test_utils::util::initialize(prj.root());
+    prj.add_script(
+        "NoTxScript.s.sol",
+        r#"
+        import {Script} from "forge-std/Script.sol";
+
+    contract NoTxScript is Script {
+        function run() public {
+            vm.startBroadcast();
+            // No real tx created
+            vm.stopBroadcast();
+        }
+    }
+    "#,
+    )
+    .unwrap();
+
+    cmd.args([
+        "script",
+        "--private-key",
+        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+        "--rpc-url",
+        &handle.http_endpoint(),
+        "--broadcast",
+        "NoTxScript",
+    ])
+    .assert_success()
+    .stderr_eq(str![
+        r#"
+Warning: No transactions to broadcast.
+
+"#
+    ]);
+});
+
+// Tests EIP-7702 broadcast <https://github.com/foundry-rs/foundry/issues/10461>
+forgetest_async!(can_broadcast_txes_with_signed_auth, |prj, cmd| {
+    foundry_test_utils::util::initialize(prj.root());
+    prj.add_script(
+            "EIP7702Script.s.sol",
+            r#"
+import "forge-std/Script.sol";
+import {Vm} from "forge-std/Vm.sol";
+import {Counter} from "../src/Counter.sol";
+contract EIP7702Script is Script {
+    uint256 constant PRIVATE_KEY = uint256(bytes32(0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80));
+    address constant SENDER = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266;
+    function setUp() public {}
+    function run() public {
+        vm.startBroadcast(PRIVATE_KEY);
+        Counter counter = new Counter();
+        Counter counter1 = new Counter();
+        Counter counter2 = new Counter();
+        vm.signAndAttachDelegation(address(counter), PRIVATE_KEY);
+        Counter(SENDER).increment();
+        Counter(SENDER).increment();
+        vm.signAndAttachDelegation(address(counter1), PRIVATE_KEY);
+        Counter(SENDER).setNumber(0);
+        vm.signAndAttachDelegation(address(counter2), PRIVATE_KEY);
+        Counter(SENDER).setNumber(0);
+        vm.stopBroadcast();
+    }
+}
+   "#,
+        )
+        .unwrap();
+
+    let node_config = NodeConfig::test().with_hardfork(Some(EthereumHardfork::Prague.into()));
+    let (_api, handle) = spawn(node_config).await;
+
+    cmd.args([
+        "script",
+        "script/EIP7702Script.s.sol",
+        "--rpc-url",
+        &handle.http_endpoint(),
+        "-vvvvv",
+        "--non-interactive",
+        "--slow",
+        "--broadcast",
+        "--evm-version",
+        "prague",
+    ])
+    .assert_success()
+    .stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+Traces:
+  [..] EIP7702Script::setUp()
+    └─ ← [Stop]
+
+  [..] EIP7702Script::run()
+    ├─ [0] VM::startBroadcast(<pk>)
+    │   └─ ← [Return]
+    ├─ [..] → new Counter@0x5FbDB2315678afecb367f032d93F642f64180aa3
+    │   └─ ← [Return] 481 bytes of code
+    ├─ [..] → new Counter@0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
+    │   └─ ← [Return] 481 bytes of code
+    ├─ [..] → new Counter@0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+    │   └─ ← [Return] 481 bytes of code
+    ├─ [0] VM::signAndAttachDelegation(0x5FbDB2315678afecb367f032d93F642f64180aa3, "<pk>")
+    │   └─ ← [Return] (0, 0xd4301eb9f82f747137a5f2c3dc3a5c2d253917cf99ecdc0d49f7bb85313c3159, 0x786d354f0bbd456f44116ddd3aa50475e989d72d8396005e5b3a12cede83fb68, 4, 0x5FbDB2315678afecb367f032d93F642f64180aa3)
+    ├─ [..] 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266::increment()
+    │   └─ ← [Stop]
+    ├─ [..] 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266::increment()
+    │   └─ ← [Stop]
+    ├─ [0] VM::signAndAttachDelegation(0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512, "<pk>")
+    │   └─ ← [Return] (0, 0xaba9128338f7ff036a0d2ecb96d4f4376389005cd565f87aba33b312570af962, 0x69acbe0831fb8ca95338bc4b908dcfebaf7b81b0f770a12c073ceb07b89fbdf3, 7, 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512)
+    ├─ [..] 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266::setNumber(0)
+    │   └─ ← [Stop]
+    ├─ [0] VM::signAndAttachDelegation(0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0, "<pk>")
+    │   └─ ← [Return] (1, 0x3a3427b66e589338ce7ea06135650708f9152e93e257b4a5ec6eb86a3e09a2ce, 0x444651c354c89fd3312aafb05948e12c0a16220827a5e467705253ab4d8aa8d3, 9, 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0)
+    ├─ [..] 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266::setNumber(0)
+    │   └─ ← [Stop]
+    ├─ [0] VM::stopBroadcast()
+    │   └─ ← [Return]
+    └─ ← [Stop]
+
+
+Script ran successfully.
+
+## Setting up 1 EVM.
+==========================
+Simulated On-chain Traces:
+
+  [..] → new Counter@0x5FbDB2315678afecb367f032d93F642f64180aa3
+    └─ ← [Return] 481 bytes of code
+
+  [..] → new Counter@0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
+    └─ ← [Return] 481 bytes of code
+
+  [..] → new Counter@0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+    └─ ← [Return] 481 bytes of code
+
+  [0] 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266::increment()
+    └─ ← [Stop]
+
+  [0] 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266::increment()
+    └─ ← [Stop]
+
+  [0] 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266::setNumber(0)
+    └─ ← [Stop]
+
+  [0] 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266::setNumber(0)
+    └─ ← [Stop]
+
+
+==========================
+
+Chain 31337
+
+[ESTIMATED_GAS_PRICE]
+
+[ESTIMATED_TOTAL_GAS_USED]
+
+[ESTIMATED_AMOUNT_REQUIRED]
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+[SAVED_TRANSACTIONS]
+
+[SAVED_SENSITIVE_VALUES]
+
+
+"#]]);
+});
+
+// Tests EIP-7702 with multiple auth <https://github.com/foundry-rs/foundry/issues/10551>
+// Alice sends 5 ETH from Bob to Receiver1 and 1 ETH to Receiver2
+forgetest_async!(can_broadcast_txes_with_multiple_auth, |prj, cmd| {
+    foundry_test_utils::util::initialize(prj.root());
+    prj.add_source(
+        "BatchCallDelegation.sol",
+        r#"
+contract BatchCallDelegation {
+    event CallExecuted(address indexed to, uint256 indexed value, bytes data, bool success);
+
+    struct Call {
+        bytes data;
+        address to;
+        uint256 value;
+    }
+
+    function execute(Call[] calldata calls) external payable {
+        for (uint256 i = 0; i < calls.length; i++) {
+            Call memory call = calls[i];
+            (bool success,) = call.to.call{value: call.value}(call.data);
+            require(success, "call reverted");
+            emit CallExecuted(call.to, call.value, call.data, success);
+        }
+    }
+}
+   "#,
+    )
+    .unwrap();
+
+    prj.add_script(
+            "BatchCallDelegationScript.s.sol",
+            r#"
+import {Script, console} from "forge-std/Script.sol";
+import {Vm} from "forge-std/Vm.sol";
+import {BatchCallDelegation} from "../src/BatchCallDelegation.sol";
+
+contract BatchCallDelegationScript is Script {
+    // Alice's address and private key (EOA with no initial contract code).
+    address payable ALICE_ADDRESS = payable(0x70997970C51812dc3A010C7d01b50e0d17dc79C8);
+    uint256 constant ALICE_PK = 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d;
+
+    // Bob's address and private key (Bob will execute transactions on Alice's behalf).
+    address constant BOB_ADDRESS = 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC;
+    uint256 constant BOB_PK = 0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a;
+
+    address constant RECEIVER_1 = 0x14dC79964da2C08b23698B3D3cc7Ca32193d9955;
+    address constant RECEIVER_2 = 0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc;
+
+    uint256 constant DEPLOYER_PK = 0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6;
+
+    function run() public {
+        BatchCallDelegation.Call[] memory aliceCalls = new BatchCallDelegation.Call[](1);
+        aliceCalls[0] = BatchCallDelegation.Call({to: RECEIVER_1, value: 5 ether, data: ""});
+
+        BatchCallDelegation.Call[] memory bobCalls = new BatchCallDelegation.Call[](2);
+        bobCalls[0] = BatchCallDelegation.Call({to: RECEIVER_1, value: 5 ether, data: ""});
+        bobCalls[1] = BatchCallDelegation.Call({to: RECEIVER_2, value: 1 ether, data: ""});
+
+        vm.startBroadcast(DEPLOYER_PK);
+        BatchCallDelegation batcher = new BatchCallDelegation();
+        vm.stopBroadcast();
+
+        vm.startBroadcast(ALICE_PK);
+        vm.signAndAttachDelegation(address(batcher), ALICE_PK);
+        vm.signAndAttachDelegation(address(batcher), BOB_PK);
+        vm.signAndAttachDelegation(address(batcher), BOB_PK);
+
+        BatchCallDelegation(BOB_ADDRESS).execute(bobCalls);
+
+        vm.stopBroadcast();
+    }
+}
+   "#,
+        )
+        .unwrap();
+
+    let node_config = NodeConfig::test().with_hardfork(Some(EthereumHardfork::Prague.into()));
+    let (api, handle) = spawn(node_config).await;
+
+    cmd.args([
+        "script",
+        "script/BatchCallDelegationScript.s.sol",
+        "--rpc-url",
+        &handle.http_endpoint(),
+        "--non-interactive",
+        "--slow",
+        "--broadcast",
+        "--evm-version",
+        "prague",
+    ])
+    .assert_success()
+    .stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+Script ran successfully.
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 31337
+
+[ESTIMATED_GAS_PRICE]
+
+[ESTIMATED_TOTAL_GAS_USED]
+
+[ESTIMATED_AMOUNT_REQUIRED]
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+[SAVED_TRANSACTIONS]
+
+[SAVED_SENSITIVE_VALUES]
+
+
+"#]]);
+
+    // Alice nonce should be 2 (tx sender and one auth)
+    let alice_acc = api
+        .get_account(address!("0x70997970C51812dc3A010C7d01b50e0d17dc79C8"), None)
+        .await
+        .unwrap();
+    assert_eq!(alice_acc.nonce, 2);
+
+    // Bob nonce should be 2 (two auths) and balance reduced by 6 ETH.
+    let bob_acc = api
+        .get_account(address!("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"), None)
+        .await
+        .unwrap();
+    assert_eq!(bob_acc.nonce, 2);
+    assert_eq!(bob_acc.balance.to_string(), "94000000000000000000");
+
+    // Receiver balances should be updated with 5 ETH and 1 ETH.
+    let receiver1 = api
+        .get_account(address!("0x14dC79964da2C08b23698B3D3cc7Ca32193d9955"), None)
+        .await
+        .unwrap();
+    assert_eq!(receiver1.nonce, 0);
+    assert_eq!(receiver1.balance.to_string(), "105000000000000000000");
+    let receiver2 = api
+        .get_account(address!("0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"), None)
+        .await
+        .unwrap();
+    assert_eq!(receiver2.nonce, 0);
+    assert_eq!(receiver2.balance.to_string(), "101000000000000000000");
 });

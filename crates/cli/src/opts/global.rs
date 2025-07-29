@@ -1,10 +1,13 @@
 use clap::{ArgAction, Parser};
-use foundry_common::shell::{ColorChoice, OutputFormat, OutputMode, Shell, Verbosity};
+use foundry_common::{
+    shell::{ColorChoice, OutputFormat, OutputMode, Shell, Verbosity},
+    version::{IS_NIGHTLY_VERSION, NIGHTLY_VERSION_WARNING_MESSAGE},
+};
 use serde::{Deserialize, Serialize};
 
-/// Global options.
+/// Global arguments for the CLI.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Parser)]
-pub struct GlobalOpts {
+pub struct GlobalArgs {
     /// Verbosity level of the log messages.
     ///
     /// Pass multiple times to increase the verbosity (e.g. -v, -vv, -vvv).
@@ -36,7 +39,7 @@ pub struct GlobalOpts {
     threads: Option<usize>,
 }
 
-impl GlobalOpts {
+impl GlobalArgs {
     /// Initialize the global options.
     pub fn init(&self) -> eyre::Result<()> {
         // Set the global shell.
@@ -45,6 +48,14 @@ impl GlobalOpts {
         // Initialize the thread pool only if `threads` was requested to avoid unnecessary overhead.
         if self.threads.is_some() {
             self.force_init_thread_pool()?;
+        }
+
+        // Display a warning message if the current version is not stable.
+        if std::env::var("FOUNDRY_DISABLE_NIGHTLY_WARNING").is_err()
+            && !self.json
+            && IS_NIGHTLY_VERSION
+        {
+            let _ = sh_warn!("{}", NIGHTLY_VERSION_WARNING_MESSAGE);
         }
 
         Ok(())
@@ -68,6 +79,24 @@ impl GlobalOpts {
     /// Initialize the global thread pool.
     pub fn force_init_thread_pool(&self) -> eyre::Result<()> {
         init_thread_pool(self.threads.unwrap_or(0))
+    }
+
+    /// Creates a new tokio runtime.
+    #[track_caller]
+    pub fn tokio_runtime(&self) -> tokio::runtime::Runtime {
+        let mut builder = tokio::runtime::Builder::new_multi_thread();
+        if let Some(threads) = self.threads
+            && threads > 0
+        {
+            builder.worker_threads(threads);
+        }
+        builder.enable_all().build().expect("failed to create tokio runtime")
+    }
+
+    /// Creates a new tokio runtime and blocks on the future.
+    #[track_caller]
+    pub fn block_on<F: std::future::Future>(&self, future: F) -> F::Output {
+        self.tokio_runtime().block_on(future)
     }
 }
 
